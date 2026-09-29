@@ -1,0 +1,35 @@
+THE DECISIVE CONTROL. Every cell that passed Gate 1 is LONG-ONLY on block C, where gold rose
+167.8%. `STUDY_TURTLE` on this branch already recorded that a channel-breakout-plus-trailing-exit
+system is a DRIFT HARVESTER -- its random-entry control earned +0.586 R/trade where the index rose
+247.6% and -0.005 where it rose 49.6%. So the passing cells are scored against the drift they are
+harvesting: the SAME side, the SAME exit machine, the SAME number of trades, entered at RANDOM bars.
+
+If the breakout does not beat a coin flip in a bull market, the primary has no edge and Gate 1's
+apparent pass is the drift.
+
+
+======================================================================================================================
+BREAKOUT vs A RANDOM ENTRY -- same side, same exits, same trade count, 400 draws per cell
+======================================================================================================================
+  cell                     block          n  rule %/ev  random p50  random p95    excess       p  verdict
+  V38  70/30 2.5N no-tp    A_primary    743    0.00061     0.00723     0.04011  -0.00661   0.657  FAIL
+  V38  70/30 2.5N no-tp    B_meta       483    0.02766     0.01980     0.04819  +0.00786   0.328  FAIL
+  V38  70/30 2.5N no-tp    C_locked     289    0.13560     0.03673     0.08143  +0.09887   0.000  PASS
+  V24  30/20 2.0N no-tp    A_primary   1458   -0.00969    -0.01335     0.00002  +0.00366   0.347  FAIL
+  V24  30/20 2.0N no-tp    B_meta       943    0.00856    -0.00382     0.01568  +0.01237   0.145  FAIL
+  V24  30/20 2.0N no-tp    C_locked     562    0.09808     0.02880     0.05004  +0.06928   0.000  PASS
+  V61i 20/20 2.0N no-tp    A_primary   1753   -0.01756    -0.01487    -0.00304  -0.00269   0.632  FAIL
+  V61i 20/20 2.0N no-tp    B_meta      1137    0.00031    -0.00566     0.00802  +0.00597   0.217  FAIL
+  V61i 20/20 2.0N no-tp    C_locked     676    0.07879     0.03142     0.05274  +0.04737   0.000  PASS
+  V61h 15/30 3.0N 6ATR     A_primary   3625   -0.03152    -0.01907    -0.01212  -0.01246   0.998  FAIL
+  V61h 15/30 3.0N 6ATR     B_meta      2444   -0.01355    -0.02026    -0.01400  +0.00672   0.045  PASS
+  V61h 15/30 3.0N 6ATR     C_locked    1476    0.01808     0.01179     0.02284  +0.00629   0.180  FAIL
+
+======================================================================================================================
+VERDICT
+======================================================================================================================
+  On block C (gold +167.8%) the RANDOM long entry with the same exits earns a median +0.02719 %/event across the four cells, against the breakout's +0.08264.
+  cells beating their own random-entry control at p <= 0.05: 4 of 12
+  on block C specifically: 3 of 4
+
+  runtime 22s

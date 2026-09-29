@@ -1,0 +1,276 @@
+//@version=5
+// V16 -- a momentum filter on a Donchian breakout. The filter does not work, and the script ships
+// with it OFF and the measurements that killed it in this header.
+//
+// ================================ WHAT WAS ASKED AND WHAT WAS FOUND ================================
+// The brief: add a momentum indicator to a Donchian 30/20 breakout, market orders only, and find
+// the most profitable model. 58 momentum scores x 366 threshold rungs x 3 timeframes x 2 sides =
+// 2,167 tests on NQ 1-minute data resampled to 5m/15m/30m, 2022-12-26 to 2025-12-12.
+//
+//   ON THE RESEARCH BLOCK   742 of 2,167 conditions were profitable and 99 of those beat a random
+//                           filter of the same selectivity at p <= 0.05, against about 37 expected
+//                           by chance. That looks like a result.
+//   ON THE LOCKED BLOCK     28% of those 99 still beat the UNFILTERED breakout. Chance is 50%.
+//                           The correlation between a condition's research edge and its locked
+//                           edge is +0.107. The family carries nothing.
+//
+// The single best cell in the whole search -- `agree20_60 >= 1` on 15m long, 285 trades, +91.1R,
+// Sharpe 2.30, p 0.0000 -- was rejected BEFORE the holdout was read, because its own neighbourhood
+// says it is not a mechanism: the four rungs below it score -1.2, +6.1, -1.1 and -4.4 against the
+// same control. The rung above and the rung below have to agree or there is no edge, only a cell.
+//
+// ================================ WHY MOMENTUM CANNOT HELP HERE ================================
+// A Donchian break IS a momentum event, so a momentum filter is largely redundant with the trigger
+// and can only discard trades. Share of bars satisfying each condition, 30m research block:
+//
+//   condition           all bars    BREAKOUT bars     lift
+//   RSI(14) >= 55         41.0%          94.7%       2.31x
+//   ema(50) dist >= 0.5N  49.4%          93.2%       1.89x
+//   CMO(21) >= 20         30.3%          79.1%       2.61x
+//   tsmom(40) >= 0.5      36.2%          74.1%       2.05x
+//   Aroon(7) osc >= 60    24.9%          70.9%       2.85x
+//
+// 95% of breakouts already pass an RSI filter. The filter is not adding information; it is
+// removing a twentieth of the sample. This is the mechanism behind the commodity-futures result
+// that motivated the study -- that the marginal contribution of TREND FOLLOWING far outweighs
+// momentum -- and it is sharper intraday on one instrument than it is cross-sectionally on
+// thirty: there is no cross-section for a momentum rank to add anything to.
+//
+// Ten filters spanning every family, applied to the shipped configuration, locked block, R/trade:
+//   none +0.1033 | tsmom40>=1 +0.1051 | aroon7>=60 +0.1587 | rsi14>=55 +0.0726 | cmo21>=20 +0.0703
+//   emadist50>=0.5 +0.0755 | roc40>=2 +0.0352 | tsmom40>=0.5 +0.0213 | macd>=0.5 -0.0073
+//   agree20_60>=1 +0.0028 | slope50>=0.02 -0.0754
+// Two of ten beat the unfiltered rule and neither by enough to survive its own multiplicity.
+//
+// ================================ THE VOLATILITY-SCALING QUESTION ================================
+// The source paper argues past returns must be volatility-scaled before ranking, or the most
+// volatile assets monopolise the extreme buckets. That argument is about a CROSS-SECTION. On one
+// instrument there is nothing for the scaling to fix, and matched on trade count the two versions
+// are the same rule -- 15m long research:
+//   tsmom40 >= 0.5  585 trades  +71.9R  PF 1.193  Sharpe 1.01   (vol-scaled)
+//   roc40   >= 2.0  553 trades  +65.0R  PF 1.188  Sharpe 0.99   (raw)
+//
+// ================================ WHAT THE SEARCH ACTUALLY MEASURED ================================
+// The configuration that holds its edge across both blocks is the one the brief already named, with
+// no filter at all: **Donchian 30 entry / 20 exit, market order at the next open, LONG only, on
+// 30-minute bars**, stop at the nearer of 2.0 x ATR(14) and the 20-bar low.
+//
+//   block      trades   days    net R   R/trade     PF    win%   Sharpe   maxDD   worst day
+//   research      435    360    +49.0   +0.1126   1.193  32.18%   1.03    25.16R    -3.13R
+//   LOCKED        226    196    +23.3   +0.1033   1.188  35.84%   1.03    23.53R    -3.85R
+//
+// The two blocks agree to within 0.01 R per trade. Nothing else in this study does. Quarter by
+// quarter over the whole sample: 9 of 13 positive, worst -10.1R.
+//
+// **AND IT DOES NOT BEAT ITS MATCHED CONTROL.** Random entries with the same side, geometry and
+// minute-of-day mix, 2,000 draws: research p = 0.1625, locked p = 0.1610. Bootstrap on the locked
+// daily series puts P(mean daily R <= 0) at 0.182. So the +0.10 R per trade is consistent with
+// being long, at these times, with these barriers -- the Donchian break itself is not established
+// as the source. Trade it as a way to be long with a defined stop, not as an alpha.
+//
+// ================================ GEOMETRY, READ BY MARGINAL AVERAGE ================================
+// 72 cells on the research block, unfiltered, 30m long -- median over each axis, not the top cell:
+//   exit channel   10: +0.032   15: +0.040   20: +0.071   25: +0.066   30: +0.057   40: +0.075
+//   ATR stop      1.5: +0.035  2.0: +0.065  2.5: +0.065  3.0: +0.044
+//   target      none: +0.076   2R: +0.042   3R: +0.049      <- no take profit beats every take
+//                                                              profit, for the fifth time here
+// 97% of the 72 cells are profitable, so the exit is not what is being fitted. On 15m the same
+// sweep prefers a LONGER exit channel (40: +0.039 against 20: +0.012) and only 60% of cells are
+// profitable -- which is why 30m ships and 15m does not.
+//
+// ================================ THE TRADING WINDOW AND THE FLATTEN ================================
+// Both ship OFF, and both are measured rather than offered. Seven windows and three flatten times
+// were tested -- a fixed set chosen in advance, not a sweep, because a swept start and end would
+// hand the search a free lottery on a sample where the intraday constraint has already failed
+// eleven independent times here.
+//
+//   entry window     research R/trade   locked R/trade   locked PF   control p (locked)
+//   all hours              +0.1126          +0.1033        1.188        0.152
+//   08:00-12:00            +0.1521          +0.1872        1.339        0.024   <- the only one
+//   07:00-11:00            +0.0394          +0.1736        1.287        0.100      better on BOTH
+//   09:30-12:00            +0.0972          +0.0491        1.098        0.246
+//   09:30-16:00            +0.0903          +0.0198        1.040        0.416
+//   13:00-16:00            +0.1440          +0.0289        1.075        0.368
+//   09:30-11:00            +0.0705          +0.0119        1.023        0.487
+//
+// **08:00-12:00 New York is the only window better than all hours on BOTH blocks**, and the only
+// one that clears a minute-of-day matched control out of sample. It is still a CANDIDATE and not a
+// finding: seven windows were tested, so p 0.024 corrects to 0.168 and does not clear its own
+// multiplicity. Note what the other rows do -- 13:00-16:00 has the best research profit factor in
+// the table (1.423) and dies out of sample, and 09:30-11:00, which an earlier study on a different
+// instrument preferred, is the WORST cell here. A window that only looks good on one block is the
+// most common way this branch has been fooled.
+//
+// The flatten costs about half the per-trade edge when there is no window, because it truncates
+// exactly the trades the channel exit was there to hold:
+//
+//   configuration                 research R/trade   locked R/trade   locked PF   locked Sharpe
+//   window off, flatten off            +0.1126          +0.1033        1.188         1.03
+//   window off, flatten 16:00          +0.0380          +0.0481        1.116         0.73
+//   08:00-12:00, flatten off           +0.1521          +0.1872        1.339         1.79
+//   08:00-12:00, flatten 16:00         +0.0957          +0.1853        1.347         1.94
+//
+// Inside the 08:00-12:00 window the flatten is roughly free -- a trade entered before noon rarely
+// survives to 16:00 anyway -- and on research it still costs 0.06 R a trade. Leave it off unless an
+// overnight position is unacceptable to you for reasons the backtest cannot see.
+//
+// THE FLATTEN FILLS AT THE NEXT BAR'S OPEN, not at the close of the bar that triggers it. That is
+// what `strategy.close_all()` does, so the research engine was changed to match the script rather
+// than the other way round; the figures above are the script's.
+//
+// ================================ COSTS AND EXECUTION ================================
+// MNQ, itemised: broker + exchange + clearing + NFA per side, half a one-tick spread, and slippage
+// that scales with the bar's true range against the series median, doubled outside 09:30-16:00 and
+// with an extra tick on a stop fill. Market orders only, by request -- which also sidesteps the
+// V15 finding that a limit-entry backtest can fill orders a script cannot place.
+// ==========================================================================================
+
+strategy("V16 Donchian breakout, momentum optional", overlay = true, pyramiding = 0,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 100000, calc_on_every_tick = false, process_orders_on_close = false,
+     commission_type = strategy.commission.cash_per_order, commission_value = 0.72, slippage = 2)
+
+// ===================== STRATEGY TESTER PROPERTIES =====================
+//   Script execution   ON BAR CLOSE only -- see docs/ib/STUDY_TICK_RECALC.md.
+//   Slippage           2 ticks. Entry is a market order and the exit is a stop; both cross.
+//   Leverage Infinity  stops silent order rejection; then read DOLLAR drawdown, not %.
+//   Timeframe          30 minutes. Studied on 5m, 15m and 30m; only 30m held both blocks.
+// ======================================================================
+
+gC       = "Breakout"
+useLong  = input.bool(true,  "Trade the LONG side", group = gC)
+useShort = input.bool(false, "Trade the SHORT side", group = gC,
+     tooltip="Off: the short breakout loses on both blocks (-0.0950 R/trade research, -0.0553 locked). NQ rose 89% over this sample and 81% of bars sit in a daily uptrend.")
+entN     = input.int(30, "Donchian entry length", minval = 2, group = gC)
+exitN    = input.int(20, "Donchian exit length", minval = 2, group = gC)
+stopMult = input.float(2.0, "ATR(14) stop multiple", minval = 0.1, step = 0.1, group = gC,
+     tooltip="The working stop is the NEARER of this and the exit channel. 2.0 and 2.5 score identically on the research marginal; 1.5 is clearly worse.")
+
+gT       = "Trading window -- both OFF by default; the header has the measurements"
+useWin   = input.bool(false, "Restrict ENTRIES to a session", group = gT,
+     tooltip="Entries only. A trade already open keeps its stop and its channel exit however long that takes -- use the flatten below if you also want it closed.")
+winSess  = input.session("0800-1200", "Entry session, New York time", group = gT,
+     tooltip="08:00-12:00 is the only one of seven tested windows better than all hours on BOTH blocks (+0.1521 research, +0.1872 locked). It does not clear its own multiplicity: p 0.024 over seven tests corrects to 0.168.")
+useFlat  = input.bool(false, "Flatten at a fixed time", group = gT,
+     tooltip="Costs about half the per-trade edge with no window (+0.1033 -> +0.0481 locked) because it truncates the trades the channel exit exists to hold. Roughly free inside 08:00-12:00.")
+flatH    = input.int(16, "Flatten hour, New York", minval = 0, maxval = 23, group = gT)
+flatM    = input.int(0,  "Flatten minute", minval = 0, maxval = 59, group = gT)
+
+gM       = "Momentum filter -- OFF, and the header says why"
+momKind  = input.string("off", "Momentum score", options = ["off", "tsmom", "roc", "rsi", "emadist"], group = gM)
+momLen   = input.int(40, "Momentum lookback", minval = 2, group = gM)
+momThr   = input.float(0.5, "Threshold, in the score's own units", step = 0.05, group = gM,
+     tooltip="Mirrored by side: a long needs score >= threshold, a short needs score <= -threshold. Tuning the two separately spends degrees of freedom on direction, which is the one thing this sample will always answer 'long'.")
+
+// ----------------------------------------------------------------- series
+// ATR IS ema(TR, 14), NOT ta.atr -- ta.atr is Wilder's RMA and a different series. The research
+// layer uses the EMA form and every level in this script is sized in it.
+atrN   = ta.ema(ta.tr(true), 14)
+// ENTRY channels exclude the current bar so a break is possible.
+entHi  = ta.highest(high, entN)[1]
+entLo  = ta.lowest(low,  entN)[1]
+// EXIT channels take NO [1]. The order is placed at this bar's close and is live on the NEXT bar,
+// so ta.lowest(low, n) here is the window the engine reads on the bar it fires.
+exLo   = ta.lowest(low,  exitN)
+exHi   = ta.highest(high, exitN)
+
+lr     = math.log(close / close[1])
+sdev   = ta.stdev(lr, momLen)
+tsmom  = sdev > 0 ? math.log(close / close[momLen]) / (sdev * math.sqrt(momLen)) : na
+rocA   = atrN > 0 ? (close - close[momLen]) / atrN : na
+rsiC   = ta.rsi(close, momLen) - 50.0
+emaD   = atrN > 0 ? (close - ta.ema(close, momLen)) / atrN : na
+momVal = switch momKind
+    "tsmom"   => tsmom
+    "roc"     => rocA
+    "rsi"     => rsiC
+    "emadist" => emaD
+    => na
+
+momOkL = momKind == "off" or (not na(momVal) and momVal >= momThr)
+momOkS = momKind == "off" or (not na(momVal) and momVal <= -momThr)
+
+// BARE `hour` AND `minute` ARE EXCHANGE TIME IN PINE -- Chicago for CME, an hour off New York.
+// `time(timeframe.period, session, tz)` is na outside the session and resolves the timezone itself,
+// which also makes it survive both daylight-saving transitions.
+modNY  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+inWin  = not useWin or not na(time(timeframe.period, winSess, "America/New_York"))
+flatNow = useFlat and modNY >= flatH * 60 + flatM
+
+ready  = not na(atrN) and atrN > 0
+sigL   = useLong  and ready and inWin and not na(entHi) and high > entHi and momOkL
+sigS   = useShort and ready and inWin and not na(entLo) and low  < entLo and momOkS
+
+// ----------------------------------------------------------------- state
+var float sigAtr    = na     // ATR FROZEN AT THE SIGNAL BAR; the stop distance reads this all trade
+var int   lastCnt   = 0
+var int   closedBar = na
+
+// EVERY var-STATE BLOCK IS GUARDED, AND SO IS THE EXIT CALL -- docs/ib/STUDY_TICK_RECALC.md.
+if barstate.isconfirmed and strategy.position_size == 0 and lastCnt > 0
+    sigAtr := na
+    lastCnt := 0
+    closedBar := bar_index
+
+if barstate.isconfirmed and strategy.opentrades > lastCnt
+    lastCnt := strategy.opentrades
+
+// A position cannot re-arm on the bar it closed on: the engine's lock requires the next signal to
+// be strictly after the exit bar, and Pine is already flat at that bar's close.
+flat = strategy.position_size == 0 and (na(closedBar) or bar_index > closedBar)
+
+// ----------------------------------------------------------------- entry, with the bracket riding
+// THE EXIT MUST BE LIVE ON THE ENTRY BAR. The engine starts its walk at the fill bar, so a bracket
+// that waits for the next bar leaves the first bar of every trade uncovered.
+// `stop` and `loss` together give exactly max(ATR stop, channel): Pine takes whichever produces
+// the SMALLER LOSS, which for a long is the HIGHER of the two prices. Two separate orders race.
+lvlL = math.min(exLo, close)     // a sell stop cannot rest above the market
+lvlS = math.max(exHi, close)     // nor a buy stop below it
+
+if barstate.isconfirmed and flat
+    if sigL
+        sigAtr := atrN
+        strategy.entry("L", strategy.long)
+        strategy.exit("x", from_entry = "L", stop = lvlL,
+             loss = int(math.max(1, math.round(stopMult * atrN / syminfo.mintick))))
+    else if sigS
+        sigAtr := atrN
+        strategy.entry("S", strategy.short)
+        strategy.exit("x", from_entry = "S", stop = lvlS,
+             loss = int(math.max(1, math.round(stopMult * atrN / syminfo.mintick))))
+
+// ----------------------------------------------------------------- exit, re-priced each bar
+if barstate.isconfirmed and strategy.position_size != 0 and lastCnt > 0 and not na(sigAtr)
+    lTk = int(math.max(1, math.round(stopMult * sigAtr / syminfo.mintick)))
+    if strategy.position_size > 0
+        strategy.exit("x", from_entry = "L", stop = lvlL, loss = lTk)
+    else
+        strategy.exit("x", from_entry = "S", stop = lvlS, loss = lTk)
+
+// ----------------------------------------------------------------- flatten
+// AFTER the working stop is placed, so a bar that hits the stop is a STOP, not a flatten -- the
+// resting order is checked intrabar while `close_all` is a market order for the next bar. The
+// engine resolves them in the same order.
+if barstate.isconfirmed and strategy.position_size != 0 and flatNow
+    strategy.close_all(comment = "flat")
+
+// ----------------------------------------------------------------- plots
+plot(useLong  ? entHi : na, "Donchian entry high", color = color.new(color.teal, 30))
+plot(useShort ? entLo : na, "Donchian entry low",  color = color.new(color.maroon, 30))
+plot(strategy.position_size > 0 ? lvlL : na, "Working stop", color = color.fuchsia, style = plot.style_linebr)
+plot(strategy.position_size < 0 ? lvlS : na, "Working stop", color = color.fuchsia, style = plot.style_linebr)
+bgcolor(useWin and inWin ? color.new(color.teal, 94) : na, title = "entry window")
+
+onTf = timeframe.period == "30"
+var table hud = table.new(position.top_right, 1, 5, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, "V16 - locked +0.1033 R/trade, PF 1.188, Sharpe 1.03",
+         text_color = color.white, bgcolor = color.new(color.teal, 20))
+    table.cell(hud, 0, 1, onTf ? "30m chart" : "NOT 30m - only 30m held both blocks",
+         text_color = color.white, bgcolor = onTf ? color.new(color.teal, 45) : color.red)
+    table.cell(hud, 0, 2, momKind == "off" ? "Momentum filter OFF - 28% of 99 survivors beat this on locked, chance is 50%" : "Momentum filter ON - it did not survive the holdout; see the header",
+         text_color = color.white, bgcolor = momKind == "off" ? color.new(color.teal, 45) : color.new(color.orange, 20))
+    table.cell(hud, 0, 3, useWin ? "Window ON - a candidate, not a finding: p 0.024 over 7 windows corrects to 0.168" : "Window OFF - all hours, which is what the study measured",
+         text_color = color.white, bgcolor = useWin ? color.new(color.orange, 20) : color.new(color.teal, 45))
+    table.cell(hud, 0, 4, "Does NOT beat a minute-of-day matched control (p 0.16). Not an alpha.",
+         text_color = color.white, bgcolor = color.new(color.red, 20))

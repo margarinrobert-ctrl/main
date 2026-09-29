@@ -1,0 +1,290 @@
+// ================================================================================================
+// NQ SCALPING SYSTEM v2 -- the submitted script, transcribed to Python with its own order model,
+// measured on 3 years of NQ 1-minute (as 1m / 5m / 15m) and 9 years of US100 15m, and corrected.
+//
+// ============================== WHAT THE SUBMITTED CONFIGURATION DID ==============================
+// Screenshot values: 5 MNQ, EMA89 trend, EMA8/21 pullback >= 15 pts, StochRSI reset 8 / cross,
+// 06:00-11:30 Chicago, ATR stop 1.5 / target 2.5, TRAIL ON with "Always use Fixed Points" ON at
+// 15 / 8 points. NQ 5m, MNQ costs 0.86 pts a side, research / locked = first 65% / last 35% of
+// sessions (cut 2024-11-27):
+//
+//   research  n 1,309   -0.0392 % of price a trade   PF 0.393   win 49.9%   -$92,951 at 5 MNQ
+//   locked    n   796   -0.0372                      PF 0.445   win 46.5%   -$67,843
+//   exits: 62% trail, 37% stop, 1% TARGET. Median hold 1-2 bars.
+//
+// Negative on 8 of 8 blocks across NQ 1m / 5m / 15m and US100 15m (PF 0.37-0.67).
+//
+// ================================ WHY, AND WHAT WAS CORRECTED ================================
+// 1. THE TRAIL INVERTS THE REWARD:RISK. Median ATR(14) on 5m NQ is ~10 points, so the stop is
+//    ~16 points and the target ~26 -- and a trail that ARMS at 15 points and trails by 8 fires on
+//    62% of trades at about +7 before the target can. 50% win rate x (+7 vs -16) is PF 0.39.
+//    Removing the trail: PF 0.393 -> 0.863 research, 0.445 -> 0.972 locked (-$27,612 / -$7,859).
+//    An ATR-scaled trail (the code's own default, 1.0 / 0.5 ATR) is JUST AS BAD (PF 0.397) at
+//    this ATR, and 30/15 and 60/30 points are 0.483 and 0.750. The trail is OFF by default here.
+//
+// 2. THE EXIT MACHINE LOSES ON ANY ENTRY. A random in-session bar with the configured geometry
+//    scores -0.0413 % a trade with a 5-95% band of [-0.0447, -0.0376] -- ENTIRELY negative. The
+//    rule's -0.0392 is inside it (p 0.177). Trail off, the random entry does BETTER than the rule
+//    (-0.0121 vs -0.0145, p 0.730).
+//
+// 3. THE ENTRY HAS NO REPRODUCIBLE INFORMATION. At a fixed 15-30 minute horizon with no exits at
+//    all, the SHORT signal read +0.13 to +0.21 ATR over a random bar on NQ 5m research (p 0.007 /
+//    0.000) -- and -0.03 / -0.00 on the locked block (p 0.64 / 0.48), negative on NQ 15m on both
+//    blocks, and absent on 9 years of US100. One block noticed it; none reproduces it. The LONG
+//    signal is null everywhere it was measured. The EMA89 gate is the only condition that helps
+//    when removed (PF 0.863 -> 0.785 without it); the 15-pt depth, the EMA touch and the StochRSI
+//    reset are each inert to +-0.01 PF.
+//
+// 4. THE SUBMITTED SCRIPT'S FILL BAR WAS NAKED, AND THAT HID A THIRD OF THE LOSS. `strategy.exit`
+//    ran after the `justEnteredLong` block set the stop, on the fill bar's close, so no stop was
+//    live during the fill bar. With a 16-point stop on a 10-point-ATR bar that matters: protecting
+//    the fill bar takes research PF 0.393 -> 0.151 and -$92,951 -> -$118,465. This version places
+//    a FILL-RELATIVE bracket AT THE SIGNAL BAR (`loss=` / `profit=` in ticks off the signal bar's
+//    ATR, frozen in a `var`) so the stop is live from the first tick of the fill.
+//
+// 5. NO `barstate.isconfirmed` GUARD. Harmless in a bar-close backtest; live, the entry fires on
+//    the first tick that satisfies the rule and STUDY_TICK_RECALC measured that at 5.1x the
+//    signals with 80% on bars that never satisfied the rule at the close. Guarded here on the
+//    entry and on every `var` write, so the Strategy Tester's "Script execution" boxes cannot
+//    change the result.
+//
+// 6. SESSION. The 07:00-12:30 New York window is inert to +-0.02 PF against 09:30 starts, a 15:55
+//    flatten and all hours. Kept as submitted, default unchanged. There is no flatten in the
+//    source and none is added; positions carry on stop / target alone.
+//
+// ================================== THE HONEST STATE OF THIS SCRIPT ==================================
+// With the trail off and the fill bar protected, on the screenshot's remaining settings:
+//   NQ 5m   research PF 0.863  locked 0.972      NQ 15m  research 1.006  locked 0.971
+//   NQ 1m   research 0.781     locked 0.877      US100 15m research 0.919  locked 0.963
+// That is negative or flat on 7 of 8 blocks and never clears a random entry. THE CORRECTIONS ABOVE
+// RECOVER ~$65,000 OF A $93,000 LOSS ON RESEARCH AND DO NOT PRODUCE AN EDGE. Nothing in the 160-cell
+// geometry sweep, the 729-cell walk-forward or the Monte Carlo (see docs/ib/STUDY_SCALP89.md)
+// changes that sentence. This file exists so the mechanics are right if the entry is ever replaced.
+// ================================================================================================
+//@version=6
+strategy("NQ Scalping System v2 (measured)", overlay = true,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 50000,
+     commission_type = strategy.commission.cash_per_contract, commission_value = 0.72,
+     slippage = 1, calc_on_every_tick = false, process_orders_on_close = false)
+
+// === POSITION SIZE ===
+riskType     = input.string("Fixed Contracts", "Position Sizing Method", options = ["Fixed Contracts", "Fixed $ Risk"], group = "Position Size")
+qtyContracts = input.int(1, "Number of Contracts (Fixed Contracts mode)", minval = 1, group = "Position Size",
+     tooltip = "The screenshot ran 5. At 5 MNQ the submitted configuration lost $92,951 on research and $67,843 on locked.")
+riskDollars  = input.float(500, "Risk Amount $ (Fixed $ Risk mode)", minval = 0, group = "Position Size")
+pointValue   = input.float(2, "$ Value per Point (NQ = 20, MNQ = 2)", minval = 0.01, group = "Position Size")
+
+// === TREND / PULLBACK / STOCHRSI -- as submitted ===
+trendEmaLen       = input.int(89, "Trend EMA Length", group = "Trend",
+     tooltip = "The only entry condition that helps: dropping it takes research PF 0.863 -> 0.785.")
+fastEmaLen        = input.int(8, "Fast EMA (pullback target)", group = "Pullback")
+slowEmaLen        = input.int(21, "Slow EMA (fallback pullback target)", group = "Pullback")
+useEma21Fallback  = input.bool(true, "Fallback to Slow EMA if Fast EMA not touched", group = "Pullback")
+minPullbackPoints = input.float(15, "Min Pullback (NQ points)", minval = 0, group = "Pullback",
+     tooltip = "Inert: 0 vs 15 points moves research PF by 0.006.")
+pullbackLookback  = input.int(10, "Pullback Swing Lookback (bars)", minval = 1, group = "Pullback")
+rsiLen          = input.int(14, "RSI Length", group = "StochRSI")
+stochLen        = input.int(14, "Stoch Length", group = "StochRSI")
+kSmooth         = input.int(3, "%K Smoothing", group = "StochRSI")
+dSmooth         = input.int(3, "%D Smoothing", group = "StochRSI")
+oversoldLevel   = input.float(20, "Oversold Level", group = "StochRSI")
+overboughtLevel = input.float(80, "Overbought Level", group = "StochRSI")
+resetLookback   = input.int(8, "Reset Lookback (bars)", minval = 1, group = "StochRSI",
+     tooltip = "Inert: removing the reset requirement moves research PF by 0.006 on 37% more trades.")
+
+// === FILTERS -- as submitted, all off ===
+useVolumeFilter = input.bool(false, "Require Volume Thrust?", group = "Filters")
+volLen          = input.int(20, "Volume Average Length", group = "Filters")
+volMult         = input.float(1.2, "Volume Thrust Multiple", group = "Filters")
+useMacdFilter   = input.bool(false, "Require MACD Momentum Confirm?", group = "Filters")
+macdFastLen     = input.int(12, "MACD Fast", group = "Filters")
+macdSlowLen     = input.int(26, "MACD Slow", group = "Filters")
+macdSignalLen   = input.int(9, "MACD Signal", group = "Filters")
+
+// === SESSION (Chicago) -- as submitted ===
+sessionStartHour   = input.int(6, "Session Start Hour (Chicago, 24h)", minval = 0, maxval = 23, group = "Session")
+sessionStartMinute = input.int(0, "Session Start Minute", minval = 0, maxval = 59, group = "Session")
+sessionEndHour     = input.int(11, "Session End Hour (Chicago, 24h)", minval = 0, maxval = 23, group = "Session")
+sessionEndMinute   = input.int(30, "Session End Minute", minval = 0, maxval = 59, group = "Session")
+sessionWarmupMins  = input.int(1, "Skip First N Minutes of Session", minval = 0, group = "Session")
+
+// === STOP / TARGET -- as submitted ===
+slTpMode          = input.string("ATR", "Stop/Target Mode", options = ["ATR", "Fixed Points"], group = "Risk")
+atrLen            = input.int(14, "ATR Length", group = "Risk")
+atrStopMult       = input.float(1.5, "ATR Stop Multiple", group = "Risk")
+atrTargetMult     = input.float(2.5, "ATR Target Multiple", group = "Risk")
+fixedStopPoints   = input.float(15, "Fixed Stop (points)", group = "Risk")
+fixedTargetPoints = input.float(25, "Fixed Target (points)", group = "Risk")
+
+// === TRAILING STOP -- DEFAULT OFF; this is what broke the submitted configuration ===
+useTrailingStop        = input.bool(false, "Enable Trailing Stop?", group = "Trailing",
+     tooltip = "MEASURED: ON at 15/8 points takes research PF 0.863 -> 0.393 and locked 0.972 -> 0.445. An ATR-scaled trail at 1.0/0.5 is as bad (0.397). 60/30 points is 0.750. Nothing measured with a trail beat no trail.")
+trailAlwaysFixedPoints = input.bool(false, "Always use Fixed Points for Trail? (ignores Stop/Target Mode)", group = "Trailing",
+     tooltip = "The screenshot had this ON. With a ~10-point 5m ATR a 15-point arm sits at the stop distance and 60% of the way to the target.")
+trailArmAtrMult        = input.float(1.0, "Trail Arm (x ATR)", minval = 0, group = "Trailing")
+trailOffsetAtrMult     = input.float(0.5, "Trail Offset (x ATR)", minval = 0, group = "Trailing")
+trailArmPoints         = input.float(15, "Trail Arm Distance (points)", minval = 0, group = "Trailing")
+trailOffsetPoints      = input.float(8, "Trail Offset (points)", minval = 0, group = "Trailing")
+
+// === EARLY EXITS / QUICK SCALP -- as submitted, all off ===
+useStochFadeExit  = input.bool(false, "Early Exit: StochRSI Fade?", group = "Early Exits")
+useEmaBreakExit   = input.bool(false, "Early Exit: EMA Break (Slow EMA)?", group = "Early Exits")
+useTrendBreakExit = input.bool(false, "Early Exit: Trend (EMA89) Break?", group = "Early Exits")
+useDivergenceExit = input.bool(false, "Early Exit: Opposite Divergence?", group = "Early Exits")
+divPivotLeft      = input.int(3, "Divergence Pivot Left Bars", minval = 1, group = "Early Exits")
+divPivotRight     = input.int(3, "Divergence Pivot Right Bars", minval = 1, group = "Early Exits")
+useQuickScalp          = input.bool(false, "Enable Quick Scalp Mode?", group = "Quick Scalp")
+quickScalpTargetPoints = input.float(8, "Quick Scalp Target (points)", minval = 0, group = "Quick Scalp")
+quickScalpMaxBars      = input.int(6, "Quick Scalp Max Bars (bail if flat)", minval = 1, group = "Quick Scalp")
+
+// === SIDES ===
+allowLong  = input.bool(true, "Allow longs", group = "Sides")
+allowShort = input.bool(true, "Allow shorts", group = "Sides",
+     tooltip = "Trail off, shorts are the losing side on research (PF 0.789 vs longs 0.942) in a market that rose 89%. Neither side has reproducible information at any horizon.")
+showHud = input.bool(true, "Show the measurement panel", group = "Display")
+
+// ---------------------------------------------------------------------------------------------
+// indicators -- identical to the submitted script's built-ins
+// ---------------------------------------------------------------------------------------------
+trendEma = ta.ema(close, trendEmaLen)
+fastEma  = ta.ema(close, fastEmaLen)
+slowEma  = ta.ema(close, slowEmaLen)
+atrVal   = ta.atr(atrLen)
+uptrend   = close > trendEma
+downtrend = close < trendEma
+swingHigh = ta.highest(high, pullbackLookback)
+swingLow  = ta.lowest(low, pullbackLookback)
+longPullbackOk  = uptrend and (swingHigh - low) >= minPullbackPoints and (low <= fastEma or (useEma21Fallback and low <= slowEma))
+shortPullbackOk = downtrend and (high - swingLow) >= minPullbackPoints and (high >= fastEma or (useEma21Fallback and high >= slowEma))
+rsiVal   = ta.rsi(close, rsiLen)
+stochRaw = ta.stoch(rsiVal, rsiVal, rsiVal, stochLen)
+kLine    = ta.sma(stochRaw, kSmooth)
+dLine    = ta.sma(kLine, dSmooth)
+hadOversoldReset   = ta.lowest(kLine, resetLookback) <= oversoldLevel
+hadOverboughtReset = ta.highest(kLine, resetLookback) >= overboughtLevel
+longStochSignal  = hadOversoldReset and ta.crossover(kLine, dLine)
+shortStochSignal = hadOverboughtReset and ta.crossunder(kLine, dLine)
+volAvg   = ta.sma(volume, volLen)
+volumeOk = not useVolumeFilter or volume >= volAvg * volMult
+[macdLine, macdSignalLine, _h] = ta.macd(close, macdFastLen, macdSlowLen, macdSignalLen)
+macdLongOk  = not useMacdFilter or macdLine > macdSignalLine
+macdShortOk = not useMacdFilter or macdLine < macdSignalLine
+chiHour   = hour(time, "America/Chicago")
+chiMinute = minute(time, "America/Chicago")
+minutesOfDay        = chiHour * 60 + chiMinute
+sessionStartMinutes = sessionStartHour * 60 + sessionStartMinute + sessionWarmupMins
+sessionEndMinutes   = sessionEndHour * 60 + sessionEndMinute
+inSession = minutesOfDay >= sessionStartMinutes and minutesOfDay < sessionEndMinutes
+
+longCond  = allowLong and longPullbackOk and longStochSignal and volumeOk and macdLongOk and inSession
+shortCond = allowShort and shortPullbackOk and shortStochSignal and volumeOk and macdShortOk and inSession
+flat = strategy.position_size == 0
+
+// distances at THIS bar, frozen into vars at the signal so the fill uses the signal bar's ATR
+thisStopDist        = slTpMode == "ATR" ? atrStopMult * atrVal : fixedStopPoints
+thisTargetDist      = useQuickScalp ? quickScalpTargetPoints : (slTpMode == "ATR" ? atrTargetMult * atrVal : fixedTargetPoints)
+thisTrailArmDist    = trailAlwaysFixedPoints ? trailArmPoints : (slTpMode == "ATR" ? trailArmAtrMult * atrVal : trailArmPoints)
+thisTrailOffsetDist = trailAlwaysFixedPoints ? trailOffsetPoints : (slTpMode == "ATR" ? trailOffsetAtrMult * atrVal : trailOffsetPoints)
+riskBasedQty = (thisStopDist > 0 and pointValue > 0) ? math.floor(riskDollars / (thisStopDist * pointValue)) : qtyContracts
+positionSize = riskType == "Fixed $ Risk" ? math.max(riskBasedQty, 1) : qtyContracts
+
+var float pendStop   = na
+var float pendTarget = na
+var float pendArm    = na
+var float pendOff    = na
+var int   entryBarIndex = na
+var int   nLong  = 0
+var int   nShort = 0
+
+// ---------------------------------------------------------------------------------------------
+// orders -- everything durable is written only on a confirmed bar
+// ---------------------------------------------------------------------------------------------
+if barstate.isconfirmed
+    if flat
+        pendStop := na
+        pendTarget := na
+        pendArm := na
+        pendOff := na
+        entryBarIndex := na
+    if flat and longCond
+        pendStop := thisStopDist
+        pendTarget := thisTargetDist
+        pendArm := thisTrailArmDist
+        pendOff := thisTrailOffsetDist
+        nLong += 1
+        strategy.entry("Long", strategy.long, qty = positionSize)
+    if flat and shortCond
+        pendStop := thisStopDist
+        pendTarget := thisTargetDist
+        pendArm := thisTrailArmDist
+        pendOff := thisTrailOffsetDist
+        nShort += 1
+        strategy.entry("Short", strategy.short, qty = positionSize)
+    if strategy.position_size != 0 and na(entryBarIndex)
+        entryBarIndex := bar_index
+
+// THE CORRECTION: a fill-relative bracket placed WITH the entry, in ticks, so it is live during
+// the fill bar. `loss` / `profit` are tick counts off the fill price; the submitted script used
+// absolute `stop=` / `limit=` set one bar later, which left the fill bar unprotected.
+stopTicks   = na(pendStop)   ? na : pendStop / syminfo.mintick
+targetTicks = na(pendTarget) ? na : pendTarget / syminfo.mintick
+trailArmTk  = useTrailingStop and not na(pendArm) ? pendArm / syminfo.mintick : na
+trailOffTk  = useTrailingStop and not na(pendOff) ? pendOff / syminfo.mintick : na
+strategy.exit("XL", "Long",  loss = stopTicks, profit = targetTicks, trail_points = trailArmTk, trail_offset = trailOffTk)
+strategy.exit("XS", "Short", loss = stopTicks, profit = targetTicks, trail_points = trailArmTk, trail_offset = trailOffTk)
+
+// early exits, as submitted (all off by default)
+stochFadeExitLong  = useStochFadeExit and strategy.position_size > 0 and ta.crossunder(kLine, dLine)
+stochFadeExitShort = useStochFadeExit and strategy.position_size < 0 and ta.crossover(kLine, dLine)
+emaBreakExitLong   = useEmaBreakExit and strategy.position_size > 0 and ta.crossunder(close, slowEma)
+emaBreakExitShort  = useEmaBreakExit and strategy.position_size < 0 and ta.crossover(close, slowEma)
+trendBreakExitLong  = useTrendBreakExit and strategy.position_size > 0 and ta.crossunder(close, trendEma)
+trendBreakExitShort = useTrendBreakExit and strategy.position_size < 0 and ta.crossover(close, trendEma)
+pivHigh = ta.pivothigh(high, divPivotLeft, divPivotRight)
+pivLow  = ta.pivotlow(low, divPivotLeft, divPivotRight)
+var float lastPivHighPrice = na
+var float lastPivHighK     = na
+var float prevPivHighPrice = na
+var float prevPivHighK     = na
+var float lastPivLowPrice  = na
+var float lastPivLowK      = na
+var float prevPivLowPrice  = na
+var float prevPivLowK      = na
+if barstate.isconfirmed and not na(pivHigh)
+    prevPivHighPrice := lastPivHighPrice
+    prevPivHighK := lastPivHighK
+    lastPivHighPrice := high[divPivotRight]
+    lastPivHighK := kLine[divPivotRight]
+if barstate.isconfirmed and not na(pivLow)
+    prevPivLowPrice := lastPivLowPrice
+    prevPivLowK := lastPivLowK
+    lastPivLowPrice := low[divPivotRight]
+    lastPivLowK := kLine[divPivotRight]
+bearishDiv = not na(prevPivHighPrice) and lastPivHighPrice > prevPivHighPrice and lastPivHighK < prevPivHighK
+bullishDiv = not na(prevPivLowPrice) and lastPivLowPrice < prevPivLowPrice and lastPivLowK > prevPivLowK
+divergenceExitLong  = useDivergenceExit and strategy.position_size > 0 and bearishDiv
+divergenceExitShort = useDivergenceExit and strategy.position_size < 0 and bullishDiv
+quickScalpBail = useQuickScalp and not na(entryBarIndex) and (bar_index - entryBarIndex) >= quickScalpMaxBars
+earlyExitLong  = stochFadeExitLong or emaBreakExitLong or trendBreakExitLong or divergenceExitLong or quickScalpBail
+earlyExitShort = stochFadeExitShort or emaBreakExitShort or trendBreakExitShort or divergenceExitShort or quickScalpBail
+if barstate.isconfirmed and earlyExitLong
+    strategy.close("Long", comment = "Early Exit")
+if barstate.isconfirmed and earlyExitShort
+    strategy.close("Short", comment = "Early Exit")
+
+// ---------------------------------------------------------------------------------------------
+plot(trendEma, "EMA89 (Trend)", color = color.gray, linewidth = 2)
+plot(fastEma, "EMA8 (Pullback)", color = color.lime)
+plot(slowEma, "EMA21 (Fallback)", color = color.orange)
+plotchar(longCond, "Long Signal", char = "▲", location = location.belowbar, color = color.lime)
+plotchar(shortCond, "Short Signal", char = "▼", location = location.abovebar, color = color.red)
+
+var table hud = table.new(position.top_right, 1, 6, border_width = 1)
+if showHud and barstate.islast
+    table.cell(hud, 0, 0, "NQ SCALPING v2 -- measured", text_color = color.white, bgcolor = color.new(color.teal, 20))
+    table.cell(hud, 0, 1, "as submitted (trail 15/8): NQ 5m PF 0.39 / 0.45, -$93k / -$68k at 5 MNQ", text_color = color.white, bgcolor = color.new(color.red, 40))
+    table.cell(hud, 0, 2, "trail OFF: PF 0.86 / 0.97 -- still no edge, fails a random entry", text_color = color.white, bgcolor = color.new(color.orange, 40))
+    table.cell(hud, 0, 3, "entry: no reproducible information at 15-60 min on any held-out block", text_color = color.white, bgcolor = color.new(color.gray, 30))
+    table.cell(hud, 0, 4, "fixed here: fill bar protected, isconfirmed guard, trail default off", text_color = color.white, bgcolor = color.new(color.gray, 30))
+    table.cell(hud, 0, 5, "signals this chart: L " + str.tostring(nLong) + "  S " + str.tostring(nShort) + "  trail " + (useTrailingStop ? "ON" : "off"), text_color = color.white, bgcolor = color.new(color.gray, 30))

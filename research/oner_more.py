@@ -135,7 +135,7 @@ def main(verbose=True):
     best = max(_sharpe(np.r_[daily(S, s), np.zeros(n_sess)][:n_sess]) for S, s in scored)
     print(f"  best single-version Sharpe {best:.2f}, so the book buys "
           f"{_sharpe(port)-best:+.2f} of it from decorrelation alone")
-    np.save("/tmp/more.npy", np.array(
+    np.save("results/oner/more.npy", np.array(
         [{"key": S["key"], "p": S["p"], "tf": S["tf"], "side": S["side"], "am": S["am"],
           "flat": S["flat"], "changed": S["changed"],
           "stats": {k: v for k, v in s.items() if not isinstance(v, np.ndarray)}}

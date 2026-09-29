@@ -1,0 +1,39 @@
+
+==============================================================================================================================
+A. BASE RATES on the cell's own signal bars (research) -- lift vs all RTH bars
+==============================================================================================================================
+  EMA200 support: above and within 1 ATR               on signal bars   0.2%   all bars   9.6%   lift 0.02x
+  EMA200 support: above and within 2 ATR               on signal bars   1.6%   all bars  20.0%   lift 0.08x
+  EMA200 support: above and within 3 ATR               on signal bars   5.2%   all bars  28.7%   lift 0.18x
+  EMA200 touched (low <= EMA200) within 5 bars, close above on signal bars  10.0%   all bars  14.8%   lift 0.68x
+  20>50 state, aligned (50 > 200)                      on signal bars  84.9%   all bars  41.6%   lift 2.04x
+  fresh 20/50 cross within 5, 20 > 200                 on signal bars   7.3%   all bars   3.4%   lift 2.18x
+  pullback: low <= EMA20 within 3 bars                 on signal bars  10.0%   all bars  72.1%   lift 0.14x
+  pullback: low <= EMA20 within 5 bars                 on signal bars  20.6%   all bars  78.4%   lift 0.26x
+  pullback: low <= EMA20 within 10 bars                on signal bars  50.8%   all bars  88.2%   lift 0.58x
+
+==============================================================================================================================
+B. EACH GATE ON THE FRONTIER-100 CELL -- research and locked (the locked column is descriptive)
+==============================================================================================================================
+  FRONTIER-100 as shipped (SMA200 floor >= 2 ATR, CHOP <= 40) res n  200   104/yr PF  2.158 win  23.5% | lock n  108   104/yr PF  1.798 win  23.1%
+    + EMA200 support: above and within 1 ATR           res n    1   nan/yr PF    nan win   nan% | lock n    0   nan/yr PF    nan win   nan%
+    + EMA200 support: above and within 2 ATR           res n    7     4/yr PF  0.687 win  14.3% | lock n    5     5/yr PF  0.000 win   0.0%
+    + EMA200 support: above and within 3 ATR           res n   23    12/yr PF  1.493 win  21.7% | lock n   17    16/yr PF  0.740 win  11.8%
+    + EMA200 touched (low <= EMA200) within 5 bars, close above res n   39    20/yr PF  1.614 win  15.4% | lock n   23    22/yr PF  2.682 win  21.7%
+    + 20>50 state, aligned (50 > 200)                  res n  168    88/yr PF  2.422 win  25.6% | lock n   90    87/yr PF  1.489 win  24.4%
+    + fresh 20/50 cross within 5, 20 > 200             res n   27    14/yr PF  2.915 win  22.2% | lock n   12    12/yr PF  1.672 win  16.7%
+    + pullback: low <= EMA20 within 3 bars             res n   41    21/yr PF  4.708 win  29.3% | lock n   24    23/yr PF  3.738 win  25.0%
+    + pullback: low <= EMA20 within 5 bars             res n   79    41/yr PF  2.559 win  19.0% | lock n   44    42/yr PF  2.216 win  20.5%
+    + pullback: low <= EMA20 within 10 bars            res n  140    73/yr PF  2.216 win  22.1% | lock n   70    67/yr PF  1.827 win  24.3%
+  the ask in full:
+    + EMA200 support(3) AND 20>50>200 AND pullback(5)  res n    3   nan/yr PF    nan win   nan% | lock n    1   nan/yr PF    nan win   nan%
+    + 20>50>200 AND pullback(5), no EMA200 support     res n   60    31/yr PF  3.293 win  21.7% | lock n   32    31/yr PF  0.882 win  18.8%
+    + EMA200 support(3) AND 20>50>200, no pullback     res n    7     4/yr PF  2.201 win  28.6% | lock n    3   nan/yr PF    nan win   nan%
+
+==============================================================================================================================
+C. SAME-SELECTIVITY RANDOM FILTER on research -- keep as many of the cell's signal bars at random
+==============================================================================================================================
+  EMA200 support(3)      research PF 1.493 | random filter median 1.766  5-95% [0.584, 3.542]  p 0.650
+  20>50>200 state        research PF 2.422 | random filter median 2.136  5-95% [1.921, 2.328]  p 0.003
+  pullback(5)            research PF 2.559 | random filter median 1.916  5-95% [1.271, 2.823]  p 0.090
+  THE ASK (all three)    research PF nan | random filter median nan  5-95% [nan, nan]  p 0.000

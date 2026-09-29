@@ -1,0 +1,96 @@
+PRIMARY DESIGN (q = 0.75):
+
+====================================================================================================
+D. JUDGE -- research (selected on) and LOCKED (read once), every-bar control, random-filter
+   control of the same selectivity on locked, geometry neighbours (multiplicity stated)
+====================================================================================================
+  design: side +1, limit 0.75 x ATR5, stop 3.0 x ATR14, target 0.75 x stop, order life 3 bars, window 09:30-15:00, flat 15:55
+  filters: sess_range_atr in [-inf, 4.01997); ret30 in [0.521182, inf)
+
+  RESEARCH: 32,473 eligible bars, 2,454 pass the filters (7.6%)
+    every bar (the control)                      n  1703 fill 45.7% win 57.0% PF 0.951 $ -2.71/t R -0.0177 net $  -4,621 DD $ -8,721 Sharpe -0.56 tgt 51%
+    THE DESIGN                                   n   426 fill 50.8% win 61.7% PF 1.182 $ +9.52/t R +0.0413 net $   4,054 DD $ -1,584 Sharpe 1.00 tgt 57%
+    random filter of the same selectivity (300 draws): win median 55.7% p 0.000; PF median 0.936 p 0.000
+
+  LOCKED: 17,316 eligible bars, 1,152 pass the filters (6.7%)
+    every bar (the control)                      n   886 fill 48.3% win 57.8% PF 1.007 $ +0.57/t R -0.0024 net $     508 DD $ -5,905 Sharpe 0.07 tgt 51%
+    THE DESIGN                                   n   194 fill 47.0% win 60.8% PF 1.170 $+13.43/t R +0.0476 net $   2,605 DD $ -1,798 Sharpe 0.80 tgt 58%
+    random filter of the same selectivity (300 draws): win median 56.8% p 0.020; PF median 1.002 p 0.077
+
+  LOCKED, geometry neighbours (the design's +-1 on each axis; 6 extra reads):
+    lim 0.5                                      n   228 fill 58.9% win 55.3% PF 0.939 $ -5.48/t R -0.0469 net $  -1,249 DD $ -3,122 Sharpe -0.35 tgt 52%
+    lim 1.0                                      n   167 fill 37.1% win 61.1% PF 1.082 $ +6.52/t R +0.0357 net $   1,089 DD $ -2,030 Sharpe 0.39 tgt 58%
+    stop 2.0                                     n   223 fill 46.6% win 58.7% PF 1.045 $ +2.59/t R -0.0072 net $     577 DD $ -1,878 Sharpe 0.25 tgt 59%
+    tp 0.5                                       n   214 fill 46.2% win 69.2% PF 1.100 $ +6.31/t R +0.0226 net $   1,349 DD $ -1,906 Sharpe 0.51 tgt 69%
+    tp 1.0                                       n   177 fill 46.8% win 53.1% PF 1.094 $ +8.70/t R +0.0255 net $   1,540 DD $ -2,300 Sharpe 0.44 tgt 47%
+
+====================================================================================================
+E. ROBUSTNESS of the design (locked block unless stated)
+====================================================================================================
+  exit split (locked): stop n 70 $-14,696, target n 113 $+17,519, flat 15:55 n 11 $-218
+    cost x1                                      n   194 fill 47.0% win 60.8% PF 1.170 $+13.43/t R +0.0476 net $   2,605 DD $ -1,798 Sharpe 0.80 tgt 58%
+    cost x1.5                                    n   194 fill 47.0% win 60.8% PF 1.139 $+11.14/t R +0.0342 net $   2,161 DD $ -1,820 Sharpe 0.67 tgt 58%
+    cost x2                                      n   194 fill 47.0% win 60.8% PF 1.109 $ +8.85/t R +0.0208 net $   1,716 DD $ -1,847 Sharpe 0.53 tgt 58%
+    through-fill 0 ticks                         n   194 fill 47.0% win 60.8% PF 1.170 $+13.43/t R +0.0476 net $   2,605 DD $ -1,798 Sharpe 0.80 tgt 58%
+    through-fill 1 ticks                         n   194 fill 47.0% win 60.8% PF 1.170 $+13.43/t R +0.0476 net $   2,605 DD $ -1,798 Sharpe 0.80 tgt 58%
+    through-fill 2 ticks                         n   194 fill 47.0% win 60.3% PF 1.162 $+12.86/t R +0.0386 net $   2,495 DD $ -1,798 Sharpe 0.77 tgt 58%
+    through-fill 4 ticks                         n   194 fill 47.0% win 60.3% PF 1.162 $+12.86/t R +0.0386 net $   2,495 DD $ -1,798 Sharpe 0.77 tgt 58%
+    order life 1 bars                            n   174 fill 22.2% win 61.5% PF 1.307 $+23.72/t R +0.0581 net $   4,127 DD $ -1,859 Sharpe 1.25 tgt 60%
+    order life 2 bars                            n   194 fill 39.0% win 60.8% PF 1.168 $+13.71/t R +0.0548 net $   2,659 DD $ -1,741 Sharpe 0.74 tgt 59%
+    order life 3 bars                            n   194 fill 47.0% win 60.8% PF 1.170 $+13.43/t R +0.0476 net $   2,605 DD $ -1,798 Sharpe 0.80 tgt 58%
+    order life 6 bars                            n   193 fill 59.8% win 62.2% PF 1.183 $+14.17/t R +0.0683 net $   2,735 DD $ -2,214 Sharpe 0.84 tgt 60%
+  perturbation +-20% on limit / stop / target (locked):
+      limit x0.8                                 n   216 fill 54.4% win 56.5% PF 0.997 $ -0.29/t R -0.0289 net $     -63 DD $ -3,268 Sharpe -0.02 tgt 53%
+      limit x1.2                                 n   181 fill 42.7% win 61.9% PF 1.145 $+11.34/t R +0.0524 net $   2,053 DD $ -2,030 Sharpe 0.69 tgt 59%
+      stop x0.8                                  n   215 fill 46.9% win 58.6% PF 1.056 $ +3.86/t R -0.0039 net $     830 DD $ -2,548 Sharpe 0.31 tgt 58%
+      stop x1.2                                  n   186 fill 49.3% win 61.8% PF 1.234 $+20.69/t R +0.0713 net $   3,848 DD $ -2,042 Sharpe 1.03 tgt 58%
+      target x0.8                                n   209 fill 46.8% win 65.1% PF 1.123 $ +8.68/t R +0.0286 net $   1,815 DD $ -1,907 Sharpe 0.63 tgt 64%
+      target x1.2                                n   188 fill 48.2% win 55.9% PF 1.143 $+12.47/t R +0.0377 net $   2,345 DD $ -2,101 Sharpe 0.65 tgt 52%
+  entry-window ladder (locked, same filters):
+      09:30-11:00                                n   184 fill 46.9% win 61.4% PF 1.216 $+16.61/t R +0.0532 net $   3,056 DD $ -1,598 Sharpe 0.97 tgt 59%
+      10:00-12:00                                n    94 fill 40.2% win 61.7% PF 1.244 $+20.85/t R +0.0871 net $   1,960 DD $ -1,002 Sharpe 0.82 tgt 56%
+      11:00-13:00                                n    19 fill 43.2% win 78.9% PF 3.334 $+86.85/t R +0.3642 net $   1,650 DD $   -318 Sharpe 1.94 tgt 74%
+      13:00-15:00                                n     1 fill 25.0% win 0.0% PF 0.000 $-199.61/t R -1.0259 net $    -200 DD $      0 Sharpe -0.88 tgt 0%
+      09:30-15:00                                n   194 fill 47.0% win 60.8% PF 1.170 $+13.43/t R +0.0476 net $   2,605 DD $ -1,798 Sharpe 0.80 tgt 58%
+  bootstrap on locked trades: P(mean R <= 0) 0.213, 90% CI [-0.0510, +0.1469]
+  session-block bootstrap: P(mean R <= 0) 0.215, 90% CI [-0.0554, +0.1476]
+  permutation drawdown, one MNQ contract: median $2,089, p95 $3,323; realised $1,798
+  by year (locked): 2024: n 17.0 $-358 win 47%  2025: n 177.0 $+2,963 win 62%
+
+WIN-RATE VARIANT (q = 0.5), same filters:
+
+====================================================================================================
+D. JUDGE -- research (selected on) and LOCKED (read once), every-bar control, random-filter
+   control of the same selectivity on locked, geometry neighbours (multiplicity stated)
+====================================================================================================
+  design: side +1, limit 0.75 x ATR5, stop 3.0 x ATR14, target 0.5 x stop, order life 3 bars, window 09:30-15:00, flat 15:55
+  filters: sess_range_atr in [-inf, 4.01997); ret30 in [0.521182, inf)
+
+  RESEARCH: 32,473 eligible bars, 2,454 pass the filters (7.6%)
+    every bar (the control)                      n  2117 fill 44.6% win 65.4% PF 0.908 $ -4.25/t R -0.0315 net $  -8,991 DD $-12,475 Sharpe -1.16 tgt 63%
+    THE DESIGN                                   n   480 fill 50.3% win 69.2% PF 1.106 $ +4.59/t R +0.0094 net $   2,204 DD $ -2,206 Sharpe 0.60 tgt 67%
+    random filter of the same selectivity (300 draws): win median 64.7% p 0.000; PF median 0.910 p 0.000
+
+  LOCKED: 17,316 eligible bars, 1,152 pass the filters (6.7%)
+    every bar (the control)                      n  1143 fill 46.3% win 66.3% PF 0.986 $ -0.90/t R -0.0088 net $  -1,024 DD $ -6,853 Sharpe -0.15 tgt 64%
+    THE DESIGN                                   n   214 fill 46.2% win 69.2% PF 1.100 $ +6.31/t R +0.0226 net $   1,349 DD $ -1,906 Sharpe 0.51 tgt 69%
+    random filter of the same selectivity (300 draws): win median 65.7% p 0.020; PF median 0.996 p 0.133
+
+  LOCKED, geometry neighbours (the design's +-1 on each axis; 6 extra reads):
+    lim 0.5                                      n   252 fill 58.3% win 64.3% PF 0.935 $ -4.67/t R -0.0500 net $  -1,178 DD $ -3,240 Sharpe -0.40 tgt 64%
+    lim 1.0                                      n   180 fill 36.2% win 68.9% PF 0.995 $ -0.31/t R +0.0058 net $     -56 DD $ -1,986 Sharpe -0.02 tgt 68%
+    stop 2.0                                     n   231 fill 44.4% win 66.7% PF 0.993 $ -0.31/t R -0.0374 net $     -72 DD $ -1,846 Sharpe -0.04 tgt 67%
+    tp 0.75                                      n   194 fill 47.0% win 60.8% PF 1.170 $+13.43/t R +0.0476 net $   2,605 DD $ -1,798 Sharpe 0.80 tgt 58%
+
+====================================================================================================
+F. SHAPE CHECK on the 15-minute feeds (bar level, target from the next bar, no 1-minute
+   path exists for these) -- research/validation/test as the branch splits them
+====================================================================================================
+  US100   research <2022       every bar n  2347 win 55.5% PF 0.932 R -0.0123 | design n   692 win 55.1% PF 0.883 R -0.0366
+  US100   validation 2022-23   every bar n   911 win 54.6% PF 0.968 R -0.0058 | design n   313 win 54.6% PF 0.916 R -0.0042
+  US100   test 2024+           every bar n   797 win 55.5% PF 1.046 R +0.0019 | design n   251 win 59.8% PF 1.348 R +0.0646
+  US30    research <2022       every bar n  2278 win 55.4% PF 0.924 R -0.0172 | design n   700 win 55.9% PF 0.984 R +0.0107
+  US30    validation 2022-23   every bar n   881 win 53.5% PF 0.973 R -0.0173 | design n   289 win 54.7% PF 0.898 R -0.0391
+  US30    test 2024+           every bar n   684 win 54.2% PF 1.004 R -0.0193 | design n   213 win 54.0% PF 1.017 R -0.0083
+  XAUUSD  2022-06 to 2024-12   every bar n   901 win 47.8% PF 0.889 R -0.0366 | design n   300 win 52.0% PF 1.086 R +0.0132
+  XAUUSD  2025+                every bar n   599 win 52.8% PF 0.952 R -0.0064 | design n   196 win 53.6% PF 1.014 R -0.0091

@@ -1,0 +1,9 @@
+feature
+mom.roc240
+vol.atr_pct
+ffd.cvd_z
+regime.hmm_side
+trend.er20
+regime.chop48
+trend.er60
+struct.excess

@@ -1,0 +1,119 @@
+============================================================================================================
+A DONCHIAN CHANNEL ON THE TREND-DAY FAMILY -- 371,520 cells, at 3x / 5x / 8x entries
+============================================================================================================
+  Three uses, all causal, all at session scale: a GATE (the qualifying session closed at
+  the extreme of its own recent channel), a STOP (the fade is cut when price breaks the
+  channel against it), and an alternative TARGET (the channel midpoint).
+  527,652 cells scored on the research block of all three long feeds.
+
+------------------------------------------------------------------------------------------------------------
+1. THE FRONTIER, WITH THE DONCHIAN, AGAINST SECTION 12's WITHOUT IT
+------------------------------------------------------------------------------------------------------------
+   entries >=     cells  best min PF  was (no DC)   change   the cell
+         1.0x   242,232         2.70            -        -   ema=15  trend_pct=60  max_touch=2  target_frac=0.75  dc_len=5  dc_gate=0.95  dc_stop=0
+         2.0x   113,472         1.98            -        -   ema=15  trend_pct=50  max_touch=2  target_frac=0.75  dc_len=55  dc_stop=1.25
+         3.0x    56,448         1.49         1.41    +0.08   ema=10  trend_pct=50  max_touch=6  target_frac=0.5  dc_len=55  dc_stop=1.25
+         5.0x    19,296         1.27         1.28    -0.01   ema=25  max_touch=2  target_frac=0.5  dc_len=55  dc_stop=1.5
+         8.0x     6,384         1.08         1.20    -0.12   ema=15  max_touch=6  target_frac=0.5  dc_len=20  dc_stop=1.5
+
+------------------------------------------------------------------------------------------------------------
+2. DOES THE DONCHIAN DO ANYTHING? the same grid with it OFF
+------------------------------------------------------------------------------------------------------------
+   entries >=     DC off: cells / best min PF      DC on: cells / best min PF    gain
+         1.0x           2,424 /        1.85         239,808 /        2.70   +0.85
+         2.0x           1,812 /        1.70         111,660 /        1.98   +0.28
+         3.0x           1,320 /        1.41          55,128 /        1.49   +0.07
+         5.0x             636 /        1.25          18,660 /        1.27   +0.02
+         8.0x             300 /        1.06           6,084 /        1.08   +0.01
+
+  The Donchian axes multiply the cell count by 129, so the DC-on column is the maximum
+  of 129x as many draws. A gain smaller than that inflation is not a finding.
+
+------------------------------------------------------------------------------------------------------------
+3. EACH DONCHIAN USE ON ITS OWN, at the frontier rungs
+------------------------------------------------------------------------------------------------------------
+  3x entries: no Donchian 1.41 | GATE only 1.36 | STOP only 1.49 | MID target only 1.37 | gate+stop 1.38
+  5x entries: no Donchian 1.25 | GATE only 1.17 | STOP only 1.27 | MID target only 1.14 | gate+stop 1.16
+  8x entries: no Donchian 1.06 | GATE only 1.05 | STOP only 1.08 | MID target only 1.02 | gate+stop 1.05
+
+------------------------------------------------------------------------------------------------------------
+4. WHAT THE TOP 1,000 AGREE ON (by the worst feed, all multiples)
+------------------------------------------------------------------------------------------------------------
+  ema          10:42%  15:25%  20:16%  25:16%
+  trend_pct    0:40%  40:22%  50:15%  60:12%  70:12%
+  max_touch    0:23%  1:31%  2:8%  3:6%  6:13%  99:18%
+  min_gap      0:49%  0.1:51%
+  target_frac  0.5:29%  0.75:28%  1:44%
+  max_hold     0:51%  16:49%
+  flat_frac    0.75:51%  1:49%
+  dc_len       0:0%  5:37%  10:52%  20:8%  55:3%
+  dc_gate      0:32%  0.7:20%  0.85:21%  0.95:26%
+  dc_stop      0:1%  0.25:13%  0.5:2%  0.75:74%  1:8%  1.25:1%  1.5:1%
+  tgt_mode     0:20%  1:80%
+  median entry multiple of the top 1,000: 0.05x
+
+------------------------------------------------------------------------------------------------------------
+5. COHERENCE -- every immediate neighbour on every axis must hold too
+------------------------------------------------------------------------------------------------------------
+   entries >=     cells   best WORST-neighbour PF   the cell
+         3.0x    56,448                      1.07   ema=20  trend_pct=40  max_touch=1  target_frac=0.5  flat_frac=0.75  dc_len=20  dc_stop=0
+         5.0x    19,296                      0.99   ema=20  trend_pct=40  max_touch=6  target_frac=0.75  flat_frac=1  dc_len=55  dc_stop=1.5
+         8.0x     6,384                      0.90   ema=25  max_touch=99  target_frac=1  flat_frac=1  dc_len=20  dc_gate=0.7  dc_stop=1.5
+
+  For comparison, section 12's best cells had worst-neighbour PF 1.18 at 3x and 1.07 at 5x.
+
+------------------------------------------------------------------------------------------------------------
+6. ONE READ OF THE RESERVED BLOCKS
+------------------------------------------------------------------------------------------------------------
+  MULTIPLICITY: 527,652 cells scored on research, on top of section 12's 127,008.
+  Bonferroni over 527,652 is 9.48e-08. The reserved read below is a single
+  read and is reported for shape, not for significance.
+
+  best worst-feed PF at 3x entries
+    ema=10  trend_pct=50  max_touch=6  min_gap=0  target_frac=0.5  max_hold=0  flat_frac=1  dc_len=55  dc_gate=0  dc_stop=1.25  tgt_mode=0
+    NQ        rese n   98 PF  1.51 mean    +6.5 | lock n   56 PF  0.75 mean    -9.2
+    US100     rese n  197 PF  1.49 mean    +4.9 | vali n  141 PF  1.65 mean   +11.3 | test n   86 PF  0.86 mean    -3.8
+    US30      rese n  219 PF  1.72 mean   +12.2 | vali n  111 PF  0.98 mean    -0.8 | test n   68 PF  1.20 mean    +7.2
+    US30_ISO  rese n   61 PF  0.94 mean    -2.5 | lock n   31 PF  1.28 mean   +10.0
+    stop exits 0%, clock exits 9% (US100)
+
+  most COHERENT cell at 3x entries
+    ema=20  trend_pct=40  max_touch=1  min_gap=0  target_frac=0.5  max_hold=0  flat_frac=0.75  dc_len=20  dc_gate=0  dc_stop=0  tgt_mode=0
+    NQ        rese n   81 PF  1.43 mean    +7.3 | lock n   42 PF  1.91 mean   +23.5
+    US100     rese n  193 PF  1.48 mean    +6.3 | vali n  101 PF  1.48 mean   +10.1 | test n   73 PF  1.60 mean   +14.9
+    US30      rese n  202 PF  1.29 mean    +7.6 | vali n   72 PF  1.94 mean   +21.8 | test n   57 PF  0.84 mean   -10.6
+    US30_ISO  rese n   50 PF  0.67 mean   -25.0 | lock n   22 PF  0.68 mean   -19.6
+    stop exits 0%, clock exits 13% (US100)
+
+  best worst-feed PF at 5x entries
+    ema=25  trend_pct=0  max_touch=2  min_gap=0  target_frac=0.5  max_hold=0  flat_frac=1  dc_len=55  dc_gate=0  dc_stop=1.5  tgt_mode=0
+    NQ        rese n  131 PF  1.32 mean    +7.1 | lock n   90 PF  1.08 mean    +2.8
+    US100     rese n  395 PF  1.27 mean    +3.7 | vali n  182 PF  1.12 mean    +3.5 | test n  131 PF  1.22 mean    +7.1
+    US30      rese n  415 PF  1.29 mean    +7.2 | vali n  152 PF  1.19 mean    +7.6 | test n  132 PF  0.97 mean    -1.3
+    US30_ISO  rese n  110 PF  0.85 mean    -9.5 | lock n   60 PF  0.87 mean    -6.6
+    stop exits 0%, clock exits 16% (US100)
+
+  most COHERENT cell at 5x entries
+    ema=20  trend_pct=40  max_touch=6  min_gap=0  target_frac=0.75  max_hold=0  flat_frac=1  dc_len=55  dc_gate=0  dc_stop=1.5  tgt_mode=0
+    NQ        rese n  156 PF  1.34 mean    +7.2 | lock n  117 PF  1.40 mean   +14.8
+    US100     rese n  430 PF  1.17 mean    +3.1 | vali n  238 PF  1.12 mean    +4.0 | test n  165 PF  1.27 mean    +8.8
+    US30      rese n  433 PF  1.18 mean    +6.0 | vali n  202 PF  1.11 mean    +5.3 | test n  132 PF  1.13 mean    +7.5
+    US30_ISO  rese n  112 PF  1.10 mean    +6.0 | lock n   55 PF  1.40 mean   +20.5
+    stop exits 0%, clock exits 15% (US100)
+
+  best worst-feed PF at 8x entries
+    ema=15  trend_pct=0  max_touch=6  min_gap=0  target_frac=0.5  max_hold=0  flat_frac=1  dc_len=20  dc_gate=0  dc_stop=1.5  tgt_mode=0
+    NQ        rese n  215 PF  1.12 mean    +2.3 | lock n  121 PF  1.19 mean    +5.9
+    US100     rese n  548 PF  1.11 mean    +1.5 | vali n  267 PF  1.03 mean    +0.9 | test n  190 PF  1.04 mean    +1.0
+    US30      rese n  579 PF  1.08 mean    +2.0 | vali n  234 PF  1.21 mean    +7.3 | test n  174 PF  1.19 mean    +6.6
+    US30_ISO  rese n  158 PF  1.02 mean    +0.9 | lock n   81 PF  1.37 mean   +14.4
+    stop exits 0%, clock exits 13% (US100)
+
+  most COHERENT cell at 8x entries
+    ema=25  trend_pct=0  max_touch=99  min_gap=0  target_frac=1  max_hold=0  flat_frac=1  dc_len=20  dc_gate=0.7  dc_stop=1.5  tgt_mode=0
+    NQ        rese n  219 PF  1.05 mean    +1.6 | lock n  118 PF  1.30 mean   +14.1
+    US100     rese n  529 PF  1.21 mean    +3.6 | vali n  241 PF  1.18 mean    +6.4 | test n  193 PF  1.12 mean    +5.3
+    US30      rese n  533 PF  1.05 mean    +1.7 | vali n  201 PF  1.26 mean   +12.4 | test n  163 PF  1.40 mean   +20.7
+    US30_ISO  rese n  144 PF  1.07 mean    +4.8 | lock n   66 PF  1.14 mean   +10.0
+    stop exits 0%, clock exits 18% (US100)
+

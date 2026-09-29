@@ -114,7 +114,7 @@ def main(tf=30, out=None):
     sweep_wins(B, combos, nbars, EB, EP, OK, sidx, cut, r_n, r_sum, r_win, l_n, l_sum, l_win)
     print(f"   swept, {time.time()-t0:.0f}s", flush=True)
 
-    path = out or f"/tmp/oner_{tf}m.npz"
+    path = out or f"results/oner/oner_{tf}m.npz"
     np.savez_compressed(path, r_n=r_n, r_sum=r_sum, r_win=r_win, l_n=l_n, l_sum=l_sum,
                         l_win=l_win, combos=combos, names=np.array(names),
                         exits=np.array(EXITS_1R), tf=np.array([tf]))

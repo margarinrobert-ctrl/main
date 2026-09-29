@@ -92,7 +92,7 @@ if __name__ == "__main__":
                   f"{x['am']:>5.1f}{x['n']:>5}{x['wr']:>6.1f}{x['base']:>6.1f}"
                   f"{x['exc_r']:>+7.1f}{x['exc_l']:>+7.1f}{x['res']:>9,.0f}{x['lok']:>9,.0f}")
     allr.sort(key=lambda r: -min(r["exc_r"], r["exc_l"]))
-    np.save("/tmp/oner_final.npy", np.array(dedupe(allr), dtype=object), allow_pickle=True)
+    np.save("results/oner/oner_final.npy", np.array(dedupe(allr), dtype=object), allow_pickle=True)
     print(f"\n{'='*100}\nBEST BY WORST-BLOCK EXCESS (the weakest of the two blocks, so neither can "
           f"carry it)\n{'='*100}")
     print(f"  {'rule':<50}{'tf':>4}{'dir':>6}{'stop':>5}{'n':>5}{'win%':>6}{'base':>6}"

@@ -1,0 +1,53 @@
+TFI on XAUUSD -- re-selecting the trend design's axes on gold's own research block.
+
+Gold is not an equity index: its cost floor is ~3x the indices' (STUDY_XAUUSD_SCALP), its
+breakout was negative GROSS at scalping stops, its anchor is 08:30 New York rather than the
+09:30 equity open, and the two things that ever flipped it positive here were wide stops and
+regime FLOORS (STUDY_TURTLE_15M: an EMA-distance floor and an ATR-expansion floor). So the
+axes that were fixed for NQ become axes here: the entry window, the flatten time, the session
+the prior-day level is taken from, the side, and the two extra floors. Research = 2022-06 to
+2024-12 (the first ~63% of the file), locked = 2025-01 onward, read ONCE for the consensus cell
+and its neighbours against a random-bar control. XAUUSD15_MT, UTC clock (registry).
+
+====================================================================================================
+A. GRID on gold research (2022-06 to 2024-12), both sides
+====================================================================================================
+
+  side +1: 12096 cells with n >= 40 of 12096; share PF > 1 56%, PF >= 1.5 44, win >= 66% 0; median R -0.0081
+    level  03:00-12:00: R -0.011 PF 1.03 win 47% (n 210)  RTH 09:30-16:00: R -0.009 PF 1.03 win 46% (n 220)  day 00:00-24:00: R -0.010 PF 1.04 win 47% (n 209)
+    window 03:00-12:00: R -0.090 PF 0.86 win 40% (n 309)  08:00-12:00: R +0.007 PF 1.07 win 48% (n 197)  08:30-11:30: R +0.059 PF 1.18 win 51% (n 162)  09:30-14:00: R -0.022 PF 1.04 win 48% (n 156)
+    flat   12:00: R -0.007 PF 1.02 win 47% (n 223)  16:00: R -0.012 PF 1.05 win 46% (n 206)
+    N      20: R -0.021 PF 1.01 win 46% (n 223)  55: R +0.001 PF 1.07 win 47% (n 203)
+    adx    0: R -0.022 PF 0.98 win 45% (n 264)  20: R -0.002 PF 1.06 win 47% (n 216)  25: R -0.006 PF 1.07 win 47% (n 159)
+    gate   False: R -0.003 PF 1.04 win 46% (n 249)  True: R -0.017 PF 1.03 win 47% (n 177)
+    ema    0.0: R -0.011 PF 1.03 win 46% (n 230)  2.0: R -0.008 PF 1.04 win 46% (n 196)
+    atrx   0.0: R -0.007 PF 1.04 win 46% (n 219)  1.1: R -0.013 PF 1.03 win 46% (n 207)
+    stop   1.5: R +0.005 PF 1.05 win 45% (n 228)  2.5: R -0.025 PF 1.00 win 46% (n 211)  3.5: R -0.010 PF 1.06 win 48% (n 201)
+    exN    10: R -0.005 PF 1.05 win 46% (n 214)  20: R -0.014 PF 1.02 win 47% (n 212)
+    tp     0.0: R -0.011 PF 1.03 win 43% (n 201)  1.0: R -0.009 PF 1.04 win 50% (n 225)
+
+  side -1: 12096 cells with n >= 40 of 12096; share PF > 1 34%, PF >= 1.5 1, win >= 66% 0; median R -0.0336
+    level  03:00-12:00: R -0.039 PF 0.94 win 44% (n 189)  RTH 09:30-16:00: R -0.040 PF 0.93 win 43% (n 198)  day 00:00-24:00: R -0.033 PF 0.95 win 44% (n 189)
+    window 03:00-12:00: R -0.064 PF 0.93 win 40% (n 275)  08:00-12:00: R -0.030 PF 0.95 win 45% (n 174)  08:30-11:30: R -0.013 PF 0.98 win 46% (n 152)  09:30-14:00: R -0.050 PF 0.86 win 44% (n 141)
+    flat   12:00: R -0.036 PF 0.95 win 46% (n 200)  16:00: R -0.039 PF 0.93 win 42% (n 186)
+    N      20: R -0.048 PF 0.91 win 43% (n 205)  55: R -0.027 PF 0.97 win 44% (n 179)
+    adx    0: R -0.065 PF 0.88 win 43% (n 238)  20: R -0.029 PF 0.96 win 45% (n 195)  25: R -0.019 PF 0.98 win 44% (n 142)
+    gate   False: R -0.053 PF 0.91 win 42% (n 234)  True: R -0.022 PF 0.97 win 45% (n 150)
+    ema    0.0: R -0.045 PF 0.92 win 43% (n 214)  2.0: R -0.030 PF 0.96 win 44% (n 170)
+    atrx   0.0: R -0.033 PF 0.95 win 44% (n 196)  1.1: R -0.043 PF 0.93 win 43% (n 188)
+    stop   1.5: R -0.063 PF 0.90 win 42% (n 206)  2.5: R -0.045 PF 0.92 win 44% (n 189)  3.5: R -0.004 PF 1.00 win 45% (n 182)
+    exN    10: R -0.043 PF 0.93 win 43% (n 193)  20: R -0.032 PF 0.95 win 44% (n 191)
+    tp     0.0: R -0.007 PF 1.01 win 41% (n 182)  1.0: R -0.068 PF 0.87 win 46% (n 202)
+
+  top 10 cells by PF with n >= 40 (both sides), research:
+     side           level      window  flat  N  adx  gate   ema  atrx  stop  exN    tp  n   win    pf     R
+        1 day 00:00-24:00 08:30-11:30 12:00 55   25  True 2.000 0.000 3.500   10 1.000 94 0.617 1.754 0.133
+        1 day 00:00-24:00 08:30-11:30 12:00 55   25  True 0.000 0.000 3.500   10 1.000 98 0.612 1.729 0.126
+        1 day 00:00-24:00 08:30-11:30 12:00 20   25  True 2.000 0.000 3.500   10 1.000 94 0.606 1.726 0.128
+        1 day 00:00-24:00 08:30-11:30 12:00 55   25  True 2.000 0.000 3.500   20 1.000 94 0.617 1.713 0.129
+        1 day 00:00-24:00 08:30-11:30 12:00 55   25  True 0.000 0.000 3.500   20 1.000 98 0.612 1.691 0.122
+        1 day 00:00-24:00 08:30-11:30 12:00 20   25  True 2.000 0.000 3.500   20 1.000 94 0.606 1.686 0.124
+        1     03:00-12:00 08:30-11:30 12:00 55   25  True 2.000 0.000 3.500   10 1.000 94 0.617 1.652 0.128
+        1 day 00:00-24:00 08:30-11:30 12:00 55   25  True 2.000 1.100 3.500   10 1.000 93 0.602 1.651 0.113
+        1     03:00-12:00 08:30-11:30 12:00 55   25  True 0.000 0.000 3.500   10 1.000 97 0.619 1.639 0.123
+        1 day 00:00-24:00 08:30-11:30 12:00 20   25  True 0.000 0.000 3.500   10 1.000 98 0.602 1.634 0.119

@@ -1,0 +1,73 @@
+
+==============================================================================================================================
+V36 PHASE 2 -- 5,400 declared cells, TRAIN only
+==============================================================================================================================
+      wick 5m done  (675/5,400)
+      wick 15m done  (1,350/5,400)
+      close 5m done  (2,025/5,400)
+      close 15m done  (2,700/5,400)
+      pen_only 5m done  (3,375/5,400)
+      pen_only 15m done  (4,050/5,400)
+      displace 5m done  (4,725/5,400)
+      displace 15m done  (5,400/5,400)
+
+==============================================================================================================================
+THE SHAPE OF THE GRID, before its top row
+==============================================================================================================================
+   5,400 scorable of 5,400   share with PF > 1: 0.161   median PF 0.904   best PF 1.758   median R/trade -0.1941
+
+   MARGINAL AVERAGE PER AXIS -- this is what the grid says, not its maximum
+      defn
+         close      cells  1350   R  -1.6523   PF  0.923   win 0.484   Sharpe  -1.04
+         displace   cells  1350   R  -2.8658   PF  0.881   win 0.474   Sharpe  -1.44
+         pen_only   cells  1350   R  -2.8183   PF  0.869   win 0.460   Sharpe  -1.61
+         wick       cells  1350   R  -2.4760   PF  0.885   win 0.472   Sharpe  -1.48
+      tf
+         5          cells  2700   R  -3.0572   PF  0.861   win 0.469   Sharpe  -1.71
+         15         cells  2700   R  -1.8489   PF  0.918   win 0.476   Sharpe  -1.08
+      entry
+         close      cells  1800   R  -4.1538   PF  0.797   win 0.444   Sharpe  -2.78
+         edge       cells  1800   R  -1.6327   PF  0.923   win 0.481   Sharpe  -0.83
+         mid        cells  1800   R  -1.5727   PF  0.947   win 0.493   Sharpe  -0.57
+      stop
+         atr        cells  1800   R  -2.5218   PF  0.813   win 0.476   Sharpe  -2.84
+         max        cells  1800   R  -2.4831   PF  0.922   win 0.475   Sharpe  -0.73
+         sweep      cells  1800   R  -2.3543   PF  0.932   win 0.468   Sharpe  -0.61
+      atr_p
+         14         cells  1800   R  -2.4684   PF  0.890   win 0.473   Sharpe  -1.37
+         20         cells  1800   R  -2.4362   PF  0.889   win 0.473   Sharpe  -1.39
+         30         cells  1800   R  -2.4546   PF  0.889   win 0.473   Sharpe  -1.41
+      stop_k
+         0.5        cells  1080   R  -2.0618   PF  0.893   win 0.467   Sharpe  -1.64
+         0.75       cells  1080   R  -2.2333   PF  0.900   win 0.477   Sharpe  -1.38
+         1.0        cells  1080   R  -2.5531   PF  0.882   win 0.474   Sharpe  -1.43
+         1.25       cells  1080   R  -2.7098   PF  0.881   win 0.472   Sharpe  -1.33
+         1.5        cells  1080   R  -2.7075   PF  0.890   win 0.472   Sharpe  -1.19
+      tp_r
+         0.75       cells  1080   R  -1.9458   PF  0.922   win 0.585   Sharpe  -1.18
+         1.0        cells  1080   R  -2.0673   PF  0.899   win 0.524   Sharpe  -1.31
+         1.25       cells  1080   R  -2.3838   PF  0.886   win 0.472   Sharpe  -1.40
+         1.5        cells  1080   R  -2.4143   PF  0.882   win 0.428   Sharpe  -1.43
+         2.0        cells  1080   R  -3.4542   PF  0.857   win 0.354   Sharpe  -1.64
+
+==============================================================================================================================
+TOP 15 CELLS ON TRAIN -- the maximum of a 5,400-cell search, read with that in mind
+==============================================================================================================================
+   defn        tf  entry   stop  atrP     k    tp   fill     n   R/trade     PF    win  Sharpe      DD
+   pen_only    15   edge  sweep    14  0.50  1.50  0.630   590     +5.07  1.117  0.444   +0.88  1751.2
+   pen_only    15   edge  sweep    14  0.75  1.50  0.630   590     +5.07  1.117  0.444   +0.88  1751.2
+   pen_only    15   edge  sweep    14  1.00  1.50  0.630   590     +5.07  1.117  0.444   +0.88  1751.2
+   pen_only    15   edge  sweep    14  1.25  1.50  0.630   590     +5.07  1.117  0.444   +0.88  1751.2
+   pen_only    15   edge  sweep    14  1.50  1.50  0.630   590     +5.07  1.117  0.444   +0.88  1751.2
+   pen_only    15   edge  sweep    30  0.50  1.50  0.630   587     +4.37  1.100  0.445   +0.76  1747.1
+   pen_only    15   edge  sweep    30  0.75  1.50  0.630   587     +4.37  1.100  0.445   +0.76  1747.1
+   pen_only    15   edge  sweep    30  1.00  1.50  0.630   587     +4.37  1.100  0.445   +0.76  1747.1
+   pen_only    15   edge  sweep    30  1.25  1.50  0.630   587     +4.37  1.100  0.445   +0.76  1747.1
+   pen_only    15   edge  sweep    30  1.50  1.50  0.630   587     +4.37  1.100  0.445   +0.76  1747.1
+   pen_only    15   edge  sweep    20  0.50  1.50  0.630   587     +4.21  1.096  0.441   +0.74  1750.4
+   pen_only    15   edge  sweep    20  0.75  1.50  0.630   587     +4.21  1.096  0.441   +0.74  1750.4
+   pen_only    15   edge  sweep    20  1.00  1.50  0.630   587     +4.21  1.096  0.441   +0.74  1750.4
+   pen_only    15   edge  sweep    20  1.25  1.50  0.630   587     +4.21  1.096  0.441   +0.74  1750.4
+   pen_only    15   edge  sweep    20  1.50  1.50  0.630   587     +4.21  1.096  0.441   +0.74  1750.4
+
+   elapsed 135s

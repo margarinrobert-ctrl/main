@@ -1,0 +1,298 @@
+// ================================================================================================
+// V61 -- the CVD exhausted-sellers rule after a 2,177,280-cell optimisation. Two presets.
+//
+// ================================ WHAT THE SEARCH ACTUALLY FOUND ================================
+// 2,177,280 nominal cells, 725,760 EFFECTIVE (the maximum-hold axis is inert: with a channel exit
+// and an ATR stop, one of them always fires first, so all three settings are one cell). Timeframe
+// 15/30/60, entry channel 15..55, exit channel 10/20/30, stop 1.5..3.0 ATR, target none/3/4/6 ATR,
+// pivot k 2..5, window w 5..40, plus four additive filters each of which survived somewhere else
+// on this branch: an MA200 distance FLOOR (V40), CHOP <= 45/40 (V21/V39), the prior completed RTH
+// session high as a level (V17), and the adaptive volatility stop (V22).
+//
+//   97.8% of the scorable grid is profitable on the research block, so the top row is the maximum
+//   of ~1.2 MILLION positive draws.
+//
+//   corr(research percent per trade, locked percent per trade) = -0.026 Pearson / -0.020 Spearman
+//   over 1,223,943 cells scorable on both blocks. The TOP 1% of research cells average -0.0017 on
+//   the locked block against the WHOLE POPULATION's +0.0508. Selecting the best research cells was
+//   worse than not selecting.
+//
+//   Every optimised finalist decayed: +0.2994 -> +0.0406, +0.4543 -> +0.0834, +0.2175 -> +0.0536.
+//   NOT ONE of nine declared finalists beat the incumbent's locked percent per trade.
+//
+// So the optimisation's honest output is not a new set of numbers. It is a MEASUREMENT of the two
+// components, and it is the best evidence the CVD gate has: on both geometries below and on BOTH
+// blocks, the gate raises the per-trade edge in 12 of 14 cells -- and it cuts the total return,
+// because it removes 70-90% of the signals.
+//
+// ==================================== THE TWO PRESETS ====================================
+// Both are long-only NQ. Percent of ENTRY PRICE for one unit, after 0.72 points of cost and 0.25
+// of slippage a side. R figures are under THIS SCRIPT'S OWN ORDER MODEL, not the research engine's.
+//
+//   INCUMBENT   30m, entry channel 20, exit channel 20, 2.0 ATR stop, no target, k3 / w20
+//               research  n 157  +0.1203 %/trade  total +18.88%  PF 1.73
+//               locked    n  85  +0.1428 %/trade  total +12.14%  PF 1.60
+//               script model: +0.3445 R research, +0.3413 R locked (engine gap -4.9% / -1.5%)
+//               vs a random FILTER of the same selectivity: research p 0.000, LOCKED p 0.012
+//               vs a random ENTRY with the same geometry:   research p 0.000, LOCKED p 0.204
+//               -> the GATE is what this preset demonstrates. The trigger is not.
+//
+//   HIGH ACTIVITY  15m, entry channel 15, exit channel 30, 3.0 ATR stop, 6 ATR target, k3 / w30
+//               research  n 409  +0.0628 %/trade  total +25.70%  PF 1.42  Sharpe +1.95
+//               locked    n 208  +0.0861 %/trade  total +17.91%  PF 1.48  Sharpe +1.89
+//               script model: +0.1042 R research, +0.1324 R locked (engine gap -9.9% / -5.8%)
+//               vs a random FILTER of the same selectivity: research p 0.000, locked p 0.066
+//               vs a random ENTRY with the same geometry:   research p 0.000, LOCKED p 0.020
+//               -> 2.4x the trades, ~48% more total return and a higher Sharpe than the incumbent
+//                  on the locked block, at 60% of the per-trade edge.
+//
+// READ THIS BEFORE PREFERRING THE SECOND ONE. It was picked from a 16-cell ablation table that was
+// read AFTER the locked block, so its p-values are DESCRIPTIVE, not significance. The incumbent is
+// the only cell of the nine pre-declared finalists that cleared its control on the locked block.
+// Neither preset clears BOTH nulls on the locked block -- the incumbent clears the filter null and
+// fails the entry null, the high-activity preset does the reverse.
+//
+// ============================ WHAT 6,000 OPTUNA TRIALS ADDED (V64) ============================
+// TPE and NSGA-II over a CONTINUOUS space the grid could not reach -- stop on [1,4] then [1,8],
+// both channels over every integer to 80 then 150, the MA200 floor and CHOP ceiling continuous.
+// Three objectives: research return, the median of 8 walk-forward folds, and a return/drawdown
+// Pareto front. The evaluator reproduces the published grid to the cent on BOTH blocks.
+//
+//   NOT ONE TRIAL BEAT THE SHIPPED 15m PRESET OUT OF SAMPLE. Research total went 18.88% ->
+//   40.93% -> 55.40% as the search got harder and wider; locked total went 12.14% -> 8.62% ->
+//   16.34%, against the 15m preset's +17.91%. The optimiser bought research score and nothing else.
+//   THE WALK-FORWARD OBJECTIVE TRANSFERRED WORST of the three: research +26.43% -> locked -0.07%.
+//   WIDEN THE BOX AND THE OPTIMUM RUNS TO THE NEW CEILING -- stop 7.61 of an 8.0 limit, target
+//   10.35 of 12.0 -- i.e. it rediscovers "very wide stop, target never reached", which is this
+//   branch's no-take-profit finding arriving through the back door.
+//   fANOVA IMPORTANCE, the one durable output: timeframe 0.48 and the CVD window w 0.21 carry the
+//   objective; k 0.006, psh 0.003, adapt 0.005 and max hold 0.012 are noise. Stop tuning those.
+//
+// A THIRD PRESET is offered from the Pareto front and is NOT the default. It matches the 15m
+// preset's locked Sharpe on half the trades with a quarter less drawdown -- and it was chosen
+// after 4,500 research trials and read once on locked, so its numbers are DESCRIPTIVE.
+//   PARETO 15m   research n 348  +0.0844 %/trade  total +29.35%  Sharpe 2.11
+//                locked   n 166  +0.0891 %/trade  total +14.80%  PF 1.513  Sharpe 1.70  maxDD -4.23%
+//                against the 15m preset's +17.91% / PF 1.479 / Sharpe 1.71 / maxDD -5.64%
+//                -> better return-over-drawdown (3.50 vs 3.18), less total return, same Sharpe.
+//
+// ==================================== EVERYTHING ELSE ====================================
+// Order-flow settings are in MINUTES and converted from the chart's own timeframe (V57), so k3/w20
+// on 30-minute bars is 90 / 600 minutes and means the same thing on any chart. A TOUCH counts as a
+// break; re-measured, that is free. The V56 parity fix is retained: the risk is anchored to the
+// SIGNAL bar's ATR and a fill-relative bracket is placed at the signal bar, so a stop is live
+// during the fill bar. ADX cleared nothing and defaults OFF. Absorbed selling halves the edge and
+// loses the locked block; the EMA 13/48 cross takes locked p 0.005 -> 0.158. Both default OFF.
+// ONE MARKET. The CVD needs 1-minute bars and NQ is the only feed here that has them, so there is
+// no cross-market read behind any of this. CVD IS A PROXY -- true aggressor delta is in no feed.
+// COSTS ARE NOT SET. Set commission and slippage in Properties before reading any number.
+// See docs/ib/STUDY_V61_CVD_OPTIMISED.md.
+// ================================================================================================
+
+//@version=5
+strategy("V61 CVD exhaustion, optimised", overlay = true,
+     default_qty_type = strategy.fixed, default_qty_value = 1, initial_capital = 100000,
+     calc_on_every_tick = false, process_orders_on_close = false, pyramiding = 0)
+
+gP = "Preset"
+gG = "Geometry -- used when the preset is Custom"
+gC = "Order flow -- MINUTES, so it means the same on every chart"
+gA = "ADX -- none of the four cleared both blocks"
+gO = "Overrides"
+gS = "Session"
+
+preset = input.string("Incumbent 30m (the only pre-declared cell that cleared its control)",
+     "Preset", group = gP,
+     options = ["Incumbent 30m (the only pre-declared cell that cleared its control)",
+                 "High activity 15m (2.4x the trades, descriptive p-values)",
+                 "Pareto 15m (V64 Optuna: same locked Sharpe, less drawdown, descriptive)",
+                 "Custom"],
+     tooltip = "A preset sets the geometry and the order-flow windows and NOTHING ELSE. The ADX, absorbed-selling, EMA-cross and session switches stay exactly where you left them.")
+
+entNi    = input.int(20, "Entry channel (bars)", minval = 2, group = gG)
+exitNi   = input.int(20, "Exit channel (bars)", minval = 2, group = gG)
+stopNi   = input.float(2.0, "Stop (ATR)", minval = 0.1, step = 0.1, group = gG)
+tpATRi   = input.float(0.0, "Take profit (ATR, 0 = none)", minval = 0.0, step = 0.5, group = gG)
+maxHoldi = input.int(480, "Max hold (bars)", minval = 1, group = gG,
+     tooltip = "INERT on every setting measured: with a channel exit and an ATR stop one of them always fires first.")
+pivMini  = input.int(90,  "Pivot half-width (minutes)", minval = 1, group = gG)
+winMini  = input.int(600, "Window (minutes)", minval = 1, group = gG)
+
+touchOk = input.bool(true, "Count a TOUCH of the channel as a break (>= instead of >)", group = gC,
+     tooltip = "Re-measured on the researched base this is free: research p 0.000 -> 0.001, locked p 0.005 -> 0.005.")
+useMinutes = input.bool(true, "Convert the pivot and window from MINUTES (recommended)", group = gC,
+     tooltip = "As raw bar counts these settings mean 1/30th as much on a 1-minute chart as on the 30-minute chart they were measured on.")
+pivBars = input.int(3,  "Pivot half-width (bars)  -- used when MINUTES is off", minval = 1, group = gC)
+winBars = input.int(20, "Window (bars)  -- used when MINUTES is off", minval = 1, group = gC)
+cvLTF   = input.string("1", "Volume-delta lower timeframe", group = gC,
+     options = ["1S", "5S", "10S", "30S", "1", "5"],
+     tooltip = "Must be STRICTLY LOWER than the chart's timeframe or no delta is produced at all.")
+
+adxMode = input.string("off", "ADX condition", group = gA,
+     options = ["off", "ADX >= 20", "ADX >= 25", "ADX <= 20"])
+adxLen  = input.int(14, "ADX length", minval = 2, group = gA)
+
+useAbs   = input.bool(false, "Also enter on ABSORBED SELLING (price HL + CVD LL)", group = gO,
+     tooltip = "MEASURED COST: halves the edge and loses the locked block (p 0.005 -> 0.210).")
+useCross = input.bool(false, "Also require EMA 13 > EMA 48", group = gO,
+     tooltip = "MEASURED COST: locked p 0.005 -> 0.158. Failed three held-back reads elsewhere.")
+useChop  = input.bool(false, "Also require CHOP(14) <= 45", group = gO,
+     tooltip = "Best-behaved filter family on this branch, and on the V61 grid its marginal is +0.2 percentage points of total return. It is not free here: it removes signals.")
+usePsh   = input.bool(false, "Also require close > the prior RTH session high", group = gO,
+     tooltip = "V17's surviving feature. Marginal on the V61 grid +0.9 points of total return, the largest of the four additive filters.")
+
+sessOn = input.bool(false, "Restrict entries to a window", group = gS)
+startH = input.int(9,  "Start hour (New York)",  minval = 0, maxval = 23, group = gS)
+startM = input.int(30, "Start minute", minval = 0, maxval = 59, group = gS)
+stopH  = input.int(16, "Stop hour (New York)",   minval = 0, maxval = 23, group = gS)
+stopM  = input.int(0,  "Stop minute", minval = 0, maxval = 59, group = gS)
+flatOn = input.bool(false, "Flatten at the stop time", group = gS,
+     tooltip = "A hard flatten cost 57-69% of the per-trade result on three markets in STUDY_V60. It is off for a reason.")
+
+// ---------------------------------------------------------------------------------------------
+// the preset resolves ONLY the geometry and the two order-flow windows
+// ---------------------------------------------------------------------------------------------
+isInc = preset == "Incumbent 30m (the only pre-declared cell that cleared its control)"
+isHi  = preset == "High activity 15m (2.4x the trades, descriptive p-values)"
+isPar = preset == "Pareto 15m (V64 Optuna: same locked Sharpe, less drawdown, descriptive)"
+
+// the Pareto cell is 15m ent 20 / exit 34 / 3.14 ATR / 5.38 ATR target / k 5 / w 58 bars,
+// so on a 15-minute chart its windows are 75 and 870 minutes.
+entN    = isInc ? 20   : isHi ? 15   : isPar ? 20    : entNi
+exitN   = isInc ? 20   : isHi ? 30   : isPar ? 34    : exitNi
+stopN   = isInc ? 2.0  : isHi ? 3.0  : isPar ? 3.14  : stopNi
+tpATR   = isInc ? 0.0  : isHi ? 6.0  : isPar ? 5.38  : tpATRi
+maxHold = isInc ? 480  : isHi ? 240  : isPar ? 255   : maxHoldi
+pivMin  = isInc ? 90   : isHi ? 45   : isPar ? 75    : pivMini
+winMin  = isInc ? 600  : isHi ? 450  : isPar ? 870   : winMini
+
+barMin  = math.max(timeframe.in_seconds() / 60.0, 1.0 / 60.0)
+pivK    = useMinutes ? math.max(1, math.round(pivMin / barMin)) : pivBars
+cvWin   = useMinutes ? math.max(1, math.round(winMin / barMin)) : winBars
+
+ltfDelta() =>
+    close > open ? volume : close < open ? -volume : 0.0
+
+dArr = request.security_lower_tf(syminfo.tickerid, cvLTF, ltfDelta())
+barDelta = array.size(dArr) > 0 ? array.sum(dArr) : 0.0
+var float cvd = 0.0
+if barstate.isconfirmed
+    cvd := cvd + barDelta
+
+pvLow = ta.pivotlow(low, pivK, pivK)
+var float prevLowP = na
+var float prevLowC = na
+var bool exhaustedSellers = false
+var bool absorbedSelling = false
+
+if barstate.isconfirmed
+    exhaustedSellers := false
+    absorbedSelling := false
+    if not na(pvLow)
+        curP = pvLow
+        curC = cvd[pivK]
+        if not na(prevLowP)
+            exhaustedSellers := curP < prevLowP and curC > prevLowC
+            absorbedSelling := curP > prevLowP and curC < prevLowC
+        prevLowP := curP
+        prevLowC := curC
+
+sinceES = nz(ta.barssince(exhaustedSellers), 1000000)
+sinceAS = nz(ta.barssince(absorbedSelling), 1000000)
+flowOk = (sinceES <= cvWin - 1) or (useAbs and sinceAS <= cvWin - 1)
+
+atrN   = ta.ema(ta.tr(true), 14)                   // NOT ta.atr, which is Wilder
+entHi  = ta.highest(high, entN)[1]
+exitLo = ta.lowest(low, exitN)[1]
+eFast  = ta.ema(close, 13)
+eSlow  = ta.ema(close, 48)
+[_dip, _dim, adxVal] = ta.dmi(adxLen, adxLen)      // [+DI, -DI, ADX] -- the THIRD element is ADX
+chopV  = 100 * math.log10(math.sum(ta.tr(true), 14)
+     / (ta.highest(high, 14) - ta.lowest(low, 14))) / math.log10(14)
+
+// the prior COMPLETED RTH session high, accumulated on this chart's own bars and frozen at the
+// session end -- `request.security` on a daily bar returns the 24-hour futures high, not this
+nyMin  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+newDay = ta.change(time("D")) != 0
+var float rthRun = na
+var float prevRth = na
+if barstate.isconfirmed
+    if newDay
+        prevRth := na(rthRun) ? prevRth : rthRun
+        rthRun := na
+    if nyMin >= 570 and nyMin < 960
+        rthRun := na(rthRun) ? high : math.max(rthRun, high)
+
+broke = touchOk ? (high >= entHi) : (high > entHi)
+crossOk = not useCross or eFast > eSlow
+chopOk  = not useChop or (not na(chopV) and chopV <= 45.0)
+pshOk   = not usePsh or (not na(prevRth) and close > prevRth)
+adxOk = adxMode == "off" ? true :
+     adxMode == "ADX >= 20" ? (adxVal >= 20.0) :
+     adxMode == "ADX >= 25" ? (adxVal >= 25.0) : (adxVal <= 20.0)
+
+sStart = startH * 60 + startM
+sStop  = stopH * 60 + stopM
+inWin = not sessOn ? true :
+     sStart <= sStop ? (nyMin >= sStart and nyMin < sStop) : (nyMin >= sStart or nyMin < sStop)
+doFlat = sessOn and flatOn and not inWin
+
+gateOk = flowOk and crossOk and adxOk and chopOk and pshOk and inWin and atrN > 0 and not na(entHi)
+
+var float pendAtr = na
+var int   heldBars = 0
+
+if barstate.isconfirmed
+    heldBars := strategy.position_size > 0 ? heldBars + 1 : 0
+
+if barstate.isconfirmed and strategy.position_size == 0 and gateOk and broke
+    pendAtr := atrN
+    heldBars := 0
+    strategy.entry("L", strategy.long)
+    lossTk = stopN * pendAtr / syminfo.mintick
+    if tpATR > 0
+        strategy.exit("x", from_entry = "L", loss = lossTk,
+             profit = tpATR * pendAtr / syminfo.mintick)
+    else
+        strategy.exit("x", from_entry = "L", loss = lossTk)
+
+if barstate.isconfirmed and strategy.position_size > 0 and not na(pendAtr)
+    fillStop = strategy.position_avg_price - stopN * pendAtr
+    lvl = math.max(fillStop, nz(exitLo, fillStop))
+    lvl := math.min(lvl, close[1])
+    if tpATR > 0
+        strategy.exit("x", from_entry = "L", stop = lvl,
+             limit = strategy.position_avg_price + tpATR * pendAtr)
+    else
+        strategy.exit("x", from_entry = "L", stop = lvl)
+
+if barstate.isconfirmed and strategy.position_size > 0 and (doFlat or heldBars >= maxHold)
+    strategy.close_all(doFlat ? "flat" : "max hold")
+
+plot(entHi, "Entry channel", color = color.new(color.teal, 50))
+plot(exitLo, "Exit channel", color = color.new(color.maroon, 50))
+plotshape(exhaustedSellers, "Exhausted sellers (gating)", shape.triangleup, location.belowbar,
+     color.new(color.lime, 0), size = size.small)
+plotshape(absorbedSelling, "Absorbed selling", shape.circle, location.belowbar,
+     color.new(color.green, 30), size = size.tiny)
+
+var table hud = table.new(position.top_right, 1, 4, border_width = 1)
+if barstate.islast
+    ltfBad = timeframe.in_seconds(cvLTF) >= timeframe.in_seconds()
+    table.cell(hud, 0, 0, isInc ? "PRESET: incumbent 30m" : isHi ? "PRESET: high activity 15m"
+         : isPar ? "PRESET: Pareto 15m (descriptive)" : "PRESET: custom",
+         text_color = color.white, bgcolor = color.new(color.teal, 20))
+    table.cell(hud, 0, 1, "channel " + str.tostring(entN) + "/" + str.tostring(exitN)
+         + "   stop " + str.tostring(stopN) + "N   TP "
+         + (tpATR > 0 ? str.tostring(tpATR) + "N" : "none"),
+         text_color = color.white, bgcolor = color.new(color.gray, 40))
+    table.cell(hud, 0, 2, "pivot " + str.tostring(pivK) + " bars   window " + str.tostring(cvWin)
+         + " bars   (" + str.tostring(math.round(pivK * barMin)) + " / "
+         + str.tostring(math.round(cvWin * barMin)) + " minutes)",
+         text_color = color.white, bgcolor = color.new(color.teal, 30))
+    table.cell(hud, 0, 3, ltfBad ? "CVD TIMEFRAME " + cvLTF + " IS NOT BELOW THE CHART -- NO DELTA"
+         : (useAbs or useCross or useChop or usePsh or adxMode != "off"
+             ? "OVERRIDES ON -- every one of them was measured as a cost"
+             : "exhausted sellers only"),
+         text_color = color.white,
+         bgcolor = ltfBad ? color.red : color.new(color.gray, 40))

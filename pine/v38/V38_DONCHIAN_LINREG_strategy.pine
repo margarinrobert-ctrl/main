@@ -1,0 +1,174 @@
+// ================================================================================================
+// V38 -- DONCHIAN BREAKOUT + ATR STOP + LINEAR-REGRESSION MA + MA
+//
+// This is the highest-profit-factor cell of a 113,400-configuration sweep. READ WHAT THAT MEANS
+// BEFORE YOU TRADE IT.
+//
+//   * 92.5% of the 113,400 cells were profitable on the research block, so this row is the maximum
+//     of about 105,000 profitable draws.
+//   * The research-to-holdout profit-factor correlation across the whole grid is -0.036 Pearson,
+//     +0.002 Spearman. The ranking that produced this configuration carries no information about
+//     the next block.
+//   * On NQ it reads research PF 1.909 and HOLDOUT PF 0.907, -$13.09 a trade.
+//   * Frozen and run on US30 and US100 -- markets that had no part in the search -- it reads
+//     PF 1.324 and 1.332 over 551 and 621 trades, 8 and 7 of 10 years positive. So it fails on the
+//     market that chose it and holds on the ones that chose nothing.
+//   * AND IT DOES NOT BEAT ITS OWN CONTROLS. Against random entries with the SAME geometry it
+//     scores p 0.077 to 0.382 across four cells -- earning 2-3x the control, consistently, and
+//     never at p <= 0.05. Against a RANDOM FILTER keeping the same number of breakout bars, the
+//     LRMA/MA stack wins 0 of 8 cells. The exit geometry is doing the work; the moving averages
+//     are selecting a subset no better than chance would.
+//
+// So: the geometry below is defensible and the two averages on it are decoration. They are left in
+// as inputs, defaulted ON to match the swept cell, and can be switched OFF -- which is the honest
+// comparison to run first.
+//
+// EVERY AXIS IN THE SWEEP INVERTED between the two blocks: longer Donchian, longer LRMA, wider
+// stop and more filtering are all best on research and worst on the holdout, in exactly reversed
+// order. The ONE axis whose research preference held is NO TAKE PROFIT -- 91% of the top 100
+// against a 20% population share, and the ninth independent time on this branch.
+//
+// THE SWEPT CELL (defaults below):
+//     30-minute, Donchian 70 entry / 30 exit, 2.5 x ATR(14) stop, NO take profit,
+//     LRMA(50) requiring close > value AND slope > 0, and MA(250) requiring LRMA > MA.
+// The neighbourhood-robust twin -- LRMA(80) slope>0 and MA(250) close>MA -- beat this one on EVERY
+// fresh-market cell, so it is offered as a preset.
+//
+// See docs/ib/STUDY_V38_LINREG_GRID.md and research/v38/.
+// Research tooling for education and analysis. NOT FINANCIAL ADVICE.
+// ================================================================================================
+//@version=6
+strategy("V38 Donchian + LinReg MA", overlay = true,
+         default_qty_type = strategy.fixed, default_qty_value = 1,
+         initial_capital = 100000, currency = currency.USD,
+         commission_type = strategy.commission.cash_per_order, commission_value = 0.72,
+         slippage = 1, calc_on_every_tick = false, process_orders_on_close = false,
+         pyramiding = 0)
+
+// ------------------------------------------------------------------------------------------------
+// inputs
+// ------------------------------------------------------------------------------------------------
+gP = "Preset"
+preset = input.string("Swept top cell", "Configuration",
+                      options = ["Swept top cell", "Neighbourhood-robust twin", "Custom"],
+                      group = gP)
+
+gE = "Entry / exit geometry  (this is the part that carries the result)"
+donEIn = input.int(70, "Donchian entry length", minval = 5, group = gE)
+donXIn = input.int(30, "Donchian exit length", minval = 5, group = gE)
+atrLen = input.int(14, "ATR length", minval = 2, group = gE)
+stopN  = input.float(2.5, "Stop, in ATR", minval = 0.1, step = 0.1, group = gE)
+useTP  = input.bool(false, "Use a take profit  (the sweep says NO for the ninth time)", group = gE)
+tpR    = input.float(2.0, "Take profit, in R", minval = 0.25, step = 0.25, group = gE)
+
+gF = "Moving-average filters  (0 of 8 cells beat a random filter of the same selectivity)"
+useLR    = input.bool(true, "LinReg MA filter on", group = gF)
+lrLenIn  = input.int(50, "LinReg MA length", minval = 5, group = gF)
+lrReadIn = input.string("both", "LinReg reading",
+     options = ["close>value", "slope>0", "both"], group = gF)
+useMA    = input.bool(true, "MA filter on", group = gF)
+maLenIn  = input.int(250, "MA length", minval = 5, group = gF)
+maReadIn = input.string("lrma>ma", "MA reading", options = ["close>ma", "lrma>ma"], group = gF)
+
+gS = "Session (New York) -- OFF by default; the sweep was run all hours"
+useSess   = input.bool(false, "Restrict entries and flatten", group = gS)
+sessStart = input.int(570, "Entries from (570 = 09:30)", group = gS)
+sessEnd   = input.int(930, "Entries until (930 = 15:30)", group = gS)
+flatAt    = input.int(960, "Flatten at (960 = 16:00)", group = gS)
+
+// preset resolution
+donE   = donEIn
+donX   = donXIn
+lrLen  = preset == "Neighbourhood-robust twin" ? 80 : lrLenIn
+lrRead = preset == "Swept top cell" ? "both"
+     : preset == "Neighbourhood-robust twin" ? "slope>0" : lrReadIn
+maLen  = preset == "Custom" ? maLenIn : 250
+maRead = preset == "Swept top cell" ? "lrma>ma"
+     : preset == "Neighbourhood-robust twin" ? "close>ma" : maReadIn
+
+// ------------------------------------------------------------------------------------------------
+// indicators
+//
+// ATR is ema(TR), NOT ta.atr -- ta.atr is Wilder's RMA and is a different number. Every barrier in
+// the research is ema(TR, 14), and this has shipped broken once on this branch.
+//
+// ta.linreg(close, n, 0) is the value of the fitted line at the CURRENT bar, which is exactly what
+// the research layer computes in closed form. Its slope is value - value[1]. NOTE what that
+// implies and what STUDY_V25_LINREG_CROSS measured: a straight-line fit has ZERO ramp lag at every
+// window, so a LinReg MA is an extrapolator, not a lagging average, and it sits with DEMA and TEMA
+// rather than with SMA/EMA.
+// ------------------------------------------------------------------------------------------------
+atr    = ta.ema(ta.tr(true), atrLen)
+donHi  = ta.highest(high, donE)[1]           // the PRIOR N-bar high; [1] so today is not in it
+donLo  = ta.lowest(low, donX)[1]
+lrVal  = ta.linreg(close, lrLen, 0)
+lrSlp  = lrVal - lrVal[1]
+maVal  = ta.sma(close, maLen)
+
+nyMin  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+inWin  = not useSess or (nyMin >= sessStart and nyMin <= sessEnd)
+atFlat = useSess and nyMin >= flatAt
+
+lrOK = not useLR or (lrRead == "close>value" ? close > lrVal
+     : lrRead == "slope>0" ? lrSlp > 0
+     : close > lrVal and lrSlp > 0)
+maOK = not useMA or (maRead == "close>ma" ? close > maVal : lrVal > maVal)
+
+brk  = close > donHi
+fire = brk and lrOK and maOK and inWin and not atFlat and not na(atr) and atr > 0
+
+// ------------------------------------------------------------------------------------------------
+// orders
+//
+// The exit marker is recorded ABOVE the entry test, and strategy.closedtrades is counted rather
+// than watching position_size[1] -- which misses a trade that opens and stops out inside one bar.
+// A stale marker let a V22 draft re-enter on the bar a trade closed: 95 extra trades, lint-clean,
+// and it read correctly. Every var-state write is guarded by barstate.isconfirmed, not just the
+// entries: guarding SOME of a coupled set desynchronises it.
+//
+// The stop is anchored to the SIGNAL BAR'S CLOSE rather than to the fill, because at the moment
+// the exit order is written the fill price does not exist. Measured on this branch at 99.0-99.5%
+// identical exit bars against anchoring to the fill.
+// ------------------------------------------------------------------------------------------------
+var int   lastExitBar = -1
+var int   nClosed = 0
+var float stopLvl = na
+var float tgtLvl = na
+
+if barstate.isconfirmed and strategy.closedtrades > nClosed
+    nClosed := strategy.closedtrades
+    lastExitBar := bar_index
+
+if barstate.isconfirmed and fire and strategy.position_size == 0 and lastExitBar != bar_index
+    risk = stopN * atr
+    stopLvl := close - risk
+    tgtLvl := useTP ? close + tpR * risk : na
+    strategy.entry("L", strategy.long)
+
+// the channel exit is a CLOSE below the prior N-bar low, which is why it is a separate order and
+// not a resting stop -- a resting stop would fire intrabar and is a different rule
+if strategy.position_size > 0
+    strategy.exit("xL", from_entry = "L", stop = stopLvl, limit = useTP ? tgtLvl : na)
+
+if barstate.isconfirmed and strategy.position_size > 0 and close < donLo
+    strategy.close("L", comment = "channel")
+
+// strategy.close_all cannot sell the close of the bar that triggers it -- it fills at the NEXT
+// bar's open, and the research engine was changed to match the script rather than the reverse.
+if barstate.isconfirmed and atFlat and strategy.position_size != 0
+    strategy.close_all(comment = "flat")
+
+// ------------------------------------------------------------------------------------------------
+// display
+// ------------------------------------------------------------------------------------------------
+plot(donHi, "Donchian entry", color.new(color.teal, 40), 1)
+plot(donLo, "Donchian exit", color.new(color.maroon, 40), 1)
+plot(useLR ? lrVal : na, "LinReg MA", color.new(color.orange, 0), 2)
+plot(useMA ? maVal : na, "MA", color.new(color.blue, 30), 2)
+plot(strategy.position_size > 0 ? stopLvl : na, "stop", color.new(color.red, 0), 1,
+     plot.style_linebr)
+plot(strategy.position_size > 0 and useTP ? tgtLvl : na, "target", color.new(color.green, 0), 1,
+     plot.style_linebr)
+plotshape(fire and strategy.position_size == 0, "entry", shape.triangleup, location.belowbar,
+     color.new(color.teal, 0), size = size.tiny)
+bgcolor(useSess and not inWin ? color.new(color.gray, 94) : na, title = "outside the window")

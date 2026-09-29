@@ -1,0 +1,211 @@
+//@version=6
+// Adapted from "MA 3 in 1" by Skrymten (user-supplied indicator).
+// Adds, on request: a SESSION WINDOW for trade selection, a SESSION STOP (flatten), and a
+// BREAKEVEN in points. All three default OFF, so with the new inputs untouched this script is the
+// submitted strategy unchanged.
+//
+// NO EDGE IS CLAIMED. Every number below is measured on US30 15-minute bars -- US30_LONG_15m
+// (2016-2025, split at 2023-01-01) and US30_ISO_15m, a DIFFERENT PROVIDER whose post-2025-07-16
+// bars no search here has touched -- and the rule is a null on all three.
+//
+//   AS SUBMITTED (all hours, no breakeven), 2.29-point round turn:
+//     research +0.265 pts/trade PF 1.005 on 1722 trades | holdout -11.026 PF 0.802 on 870
+//     forward (different provider) +1.430 PF 1.029 on 457
+//   THE WIN RATE IS ITS OWN BREAK-EVEN. Symmetric 100/100 barriers with a 2.29-point cost need
+//   51.15% to break even; the rule delivers 51.28% / 45.63% / 51.86%. The barriers are being hit
+//   by noise -- fifth strategy family measured that way on this branch.
+//
+//   A POINT IS NOT A GEOMETRY. 100 points is 3.44x the median ATR on US30_LONG and 2.50x on
+//   US30_ISO, and on US30 alone a fixed point stop was 4.23 ATR in 2016 against 1.10 in 2025, so
+//   a points barrier confounds geometry with market AND with era. The panel prints the live ATR
+//   equivalent of whatever you set.
+//
+//   THE SESSION WINDOW, 42 declared cells (7 windows x flatten on/off x 3 blocks),
+//   E[max t | pure noise] 2.209 against the 2.802 detection needs. Marginal average by window,
+//   points a trade: 13:00-16:00 +0.83 (the only positive), all hours -3.11, 09:30-16:00 -2.58,
+//   09:30-11:00 -3.01, 09:30-12:00 -5.18, 07:00-11:00 -6.11, 08:00-12:00 -9.04.
+//   THE FLATTEN HELPS IN 9 OF 18 PAIRED CELLS -- exactly chance -- at a mean of -0.67 pts/trade.
+//
+//   THE BREAKEVEN, 21 effective cells (rungs at or beyond the 100-point target are INERT because
+//   the target resolves first on the same bar, and are excluded rather than counted),
+//   E[max t | noise] 1.922. It beats its own OFF twin in 13 of 18 paired cells, monotone in the
+//   arming distance: +4.35 pts at 25, +1.43 at 50, -0.22 at 75. READ THE TRADE COUNT FIRST -- it
+//   RISES by 251 / 118 / 46 trades, because a breakeven closes positions sooner, frees the
+//   one-position lock and admits later crosses the base never saw. That is a DIFFERENT STRATEGY
+//   with more trades, not a filter on the same ones.
+//
+//   SECURED POINTS ARE A WIN-RATE ILLUSION, and here the largest one measured anywhere on this
+//   branch. At breakeven 25 the same trades read a 26.07% win rate securing 0 and 79.35%
+//   securing 5 -- FIFTY-THREE POINTS -- while the money moves from +3.099 to +3.472 pts a trade.
+//   A stop at the fill books MINUS the round turn and is a LOSS; five points beyond it books
+//   +2.71 and is a win. The threshold is the round turn, not zero, and the panel computes it live.
+//
+//   AND NOTHING CLEARS ITS NULL OUT OF SAMPLE. Against a random entry with the identical window,
+//   side mix, barriers, breakeven and cost: 2 of 9 declared cells clear p<=0.05 where 0.5 are
+//   expected -- and BOTH are US30_LONG RESEARCH cells (13:00-16:00 p 0.024, breakeven 25/5
+//   p 0.004) which then read p 0.308 / 0.500 on the holdout and p 0.288 / 0.268 on the
+//   different-provider forward feed. 1 of 9 exceeds its own minimum detectable effect.
+//
+// Backtest defaults: 100,000 initial capital, one unit, zero commission/slippage.
+// Configure capital, order size, margin and trading costs in Strategy Properties.
+strategy("US30 MA 13/48/200 - 100 Point TP/SL", overlay = true, pyramiding = 0,
+     initial_capital = 100000, default_qty_type = strategy.fixed, default_qty_value = 1,
+     margin_long = 100, margin_short = 100,
+     commission_type = strategy.commission.cash_per_contract, commission_value = 0,
+     slippage = 0, calc_on_every_tick = false, calc_on_order_fills = false,
+     process_orders_on_close = false)
+
+// Indicator settings from the supplied screenshot.
+maType = input.string("EMA", "MA type", options = ["EMA", "SMA", "Hull", "WMA", "VWMA"])
+price = input.source(close, "Price")
+fastLength = input.int(13, "MA Fast", minval = 1)
+slowLength = input.int(48, "MA Slow", minval = 1)
+turtleLength = input.int(200, "MA Turtle", minval = 1)
+viewCrossFlag = input.bool(false, "View MA Slow/Turtle crossover")
+
+// A point means 1.0 in the chart's quoted price, not one tick or one dollar of P&L.
+grpX = "Exit"
+tpPoints = input.float(100.0, "Take-profit (price points)", minval = 0.01, step = 1.0, group = grpX,
+     tooltip = "Distance from the entry fill. Rounded to the nearest valid tick, minimum one tick. 100 points is 3.44x the median ATR on US30_LONG and 2.50x on US30_ISO, so this is NOT the same geometry on two feeds; the panel prints the live ATR equivalent.")
+slPoints = input.float(100.0, "Stop-loss (price points)", minval = 0.01, step = 1.0, group = grpX,
+     tooltip = "Distance from the entry fill. Rounded to the nearest valid tick, minimum one tick. With a symmetric target this geometry needs a 51.15% win rate to break even after a 2.29-point round turn; the rule delivers 51.28% research, 45.63% holdout, 51.86% forward.")
+
+// ----------------------------------------------------------------------------- session
+grpS = "Session -- trade selection window"
+useSession = input.bool(false, "Only take entries inside a window", group = grpS,
+     tooltip = "DEFAULT OFF, and measured. Marginal average over a declared 42-cell ladder (7 windows x flatten on/off x US30 research, holdout and a different-provider forward block), points a trade: 13:00-16:00 +0.83 -- the only positive window -- against all hours -3.11, 09:30-16:00 -2.58, 09:30-11:00 -3.01, 09:30-12:00 -5.18, 07:00-11:00 -6.11 and 08:00-12:00 -9.04. The best window clears a matched random entry on the research block (p 0.024) and then reads p 0.308 on the holdout and 0.288 on the forward feed, which is the shape of a window chosen on one block.")
+sessStart = input.int(780, "Window start, minutes past New York midnight", minval = 0, maxval = 1439, group = grpS,
+     tooltip = "780 = 13:00. Declared in MINUTES so the same number means the same time on any chart timeframe. 420 = 07:00, 480 = 08:00, 570 = 09:30, 960 = 16:00.")
+sessEnd = input.int(960, "Window end (exclusive)", minval = 1, maxval = 1440, group = grpS,
+     tooltip = "960 = 16:00. Entries are admitted on bars stamped in [start, end). An open position is NOT closed here unless the session stop below is switched on.")
+useFlat = input.bool(false, "Session stop: flatten at the window end", group = grpS,
+     tooltip = "DEFAULT OFF. Filled at the OPEN of the cutoff minute, so the order is submitted on the bar before -- strategy.close_all() cannot sell the close of the bar that triggers it. Measured, it helps in 9 of 18 paired cells (exactly chance) at a mean of -0.67 points a trade, and this branch has now measured a hard flatten as destructive seventeen times on other families.")
+
+// ----------------------------------------------------------------------------- breakeven
+grpB = "Breakeven"
+beMode = input.string("Off", "Auto breakeven", options = ["Off", "Points"], group = grpB,
+     tooltip = "DEFAULT OFF. Once the favourable excursion from the FILL reaches the arming distance, the stop moves to the fill plus the secured points. It arms on the bar that reaches the distance and can only BIND from the bar after -- inside one bar OHLC cannot say whether the excursion came before or after the pullback. Measured on 21 effective cells: it beats its own OFF twin in 13 of 18 paired cells, monotone in the arming distance (+4.35 pts at 25, +1.43 at 50, -0.22 at 75). But READ THE TRADE COUNT: it rises by 251 / 118 / 46 trades, because closing sooner frees the one-position lock and admits later crosses. That is a different strategy with more trades, not a filter. It clears a matched random entry on the research block (p 0.004) and reads p 0.500 on the holdout and 0.268 on the forward feed.")
+bePoints = input.float(25.0, "Breakeven arms at (price points)", minval = 1.0, step = 1.0, group = grpB,
+     tooltip = "A breakeven at or beyond the take-profit distance can NEVER fire, because the target resolves first on the same bar -- those settings are inert and were excluded from the measured grid rather than counted as tests. Keep this well inside the target.")
+beSecure = input.float(5.0, "Secure (price points, 0 = true breakeven)", minval = 0.0, step = 1.0, group = grpB,
+     tooltip = "How far BEYOND the fill the moved stop sits. THE THRESHOLD IS THE ROUND TURN, NOT ZERO: a stop at the fill books minus commission and slippage and is a LOSS, which is why a true breakeven exit paints red in the Strategy Tester. It RELABELS exits it does not move -- at breakeven 25 the same trades read a 26.07% win rate securing 0 and 79.35% securing 5, fifty-three points, while the money moves +3.099 to +3.472 points a trade. The panel computes the round turn live from your own closed trades and says whether your setting clears it.")
+
+// ----------------------------------------------------------------------------- clock
+// Bare hour/minute are EXCHANGE time (Chicago on CME); New York is what a session rule means.
+nyMin = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+tfMin = math.max(1.0, timeframe.in_seconds(timeframe.period) / 60.0)
+inWindow = not useSession or (nyMin >= sessStart and nyMin < sessEnd)
+flatNow = useSession and useFlat and (nyMin + tfMin >= sessEnd) and nyMin < sessEnd
+
+movingAverage(source, length) =>
+    switch maType
+        "EMA" => ta.ema(source, length)
+        "SMA" => ta.sma(source, length)
+        "Hull" => ta.hma(source, length)
+        "WMA" => ta.wma(source, length)
+        => ta.vwma(source, length)
+
+maFast = movingAverage(price, fastLength)
+maSlow = movingAverage(price, slowLength)
+maTurtle = movingAverage(price, turtleLength)
+
+// Preserve the original fast/slow buy and sell signals.
+buySignal = ta.crossover(maFast, maSlow)
+sellSignal = ta.crossunder(maFast, maSlow)
+slowCrossUp = ta.crossover(maSlow, maTurtle)
+slowCrossDown = ta.crossunder(maSlow, maTurtle)
+
+// strategy.exit() profit/loss distances are ticks, measured from the entry fill.
+tpTicks = math.max(1, int(math.round(tpPoints / syminfo.mintick)))
+slTicks = math.max(1, int(math.round(slPoints / syminfo.mintick)))
+
+// The breakeven ratchet is re-issued as an ABSOLUTE stop once the position exists, which is one
+// bar after the entry order is written -- strategy.position_avg_price does not exist before then.
+var bool beArmed = false
+
+// Confirm signals at bar close; market entries fill at the next available tick.
+// Submit the bracket with its entry so it can also exit during the entry bar.
+// Ignore new signals while a position is open; do not reverse on an opposite cross.
+if barstate.isconfirmed and strategy.position_size != 0 and flatNow
+    strategy.close_all(comment = "session stop")
+
+if barstate.isconfirmed and not flatNow and strategy.position_size == 0 and inWindow
+    if buySignal
+        beArmed := false
+        strategy.entry("Long", strategy.long)
+        strategy.exit("Long TP/SL", from_entry = "Long", profit = tpTicks, loss = slTicks,
+             comment_profit = "Long TP", comment_loss = "Long SL")
+    else if sellSignal
+        beArmed := false
+        strategy.entry("Short", strategy.short)
+        strategy.exit("Short TP/SL", from_entry = "Short", profit = tpTicks, loss = slTicks,
+             comment_profit = "Short TP", comment_loss = "Short SL")
+
+// Arm on the bar whose favourable extreme reaches the distance; the moved stop is live from the
+// NEXT bar, which is both what the research walker does and what an order written at a bar close
+// can actually achieve.
+if barstate.isconfirmed and beMode == "Points" and strategy.position_size != 0 and not beArmed
+    entryPrice = strategy.position_avg_price
+    if not na(entryPrice)
+        isLong = strategy.position_size > 0
+        favourable = isLong ? high - entryPrice : entryPrice - low
+        if favourable >= bePoints
+            beArmed := true
+            beStop = isLong ? entryPrice + beSecure : entryPrice - beSecure
+            if isLong
+                strategy.exit("Long TP/SL", from_entry = "Long", stop = beStop,
+                     limit = entryPrice + tpTicks * syminfo.mintick,
+                     comment_profit = "Long TP", comment_loss = "Long BE")
+            else
+                strategy.exit("Short TP/SL", from_entry = "Short", stop = beStop,
+                     limit = entryPrice - tpTicks * syminfo.mintick,
+                     comment_profit = "Short TP", comment_loss = "Short BE")
+
+plot(maTurtle, title = "MA Turtle", style = plot.style_circles, linewidth = 2,
+     color = maFast >= maSlow ? #eeeeee : #cccccc)
+plot(maFast, title = "MA Fast", color = #808000, linewidth = 2)
+plot(maSlow, title = "MA Slow", color = #800000, linewidth = 2)
+plotchar(viewCrossFlag and slowCrossDown, title = "Slow/Turtle cross down",
+     char = "✜", color = #ff0000, location = location.top, size = size.tiny)
+plotchar(viewCrossFlag and slowCrossUp, title = "Slow/Turtle cross up",
+     char = "✜", color = #008000, location = location.bottom, size = size.tiny)
+bgcolor(useSession and inWindow ? color.new(color.gray, 92) : na, title = "Entry window")
+
+// These lines show bracket levels while a position remains open at bar close.
+positionDirection = math.sign(strategy.position_size)
+targetPrice = strategy.position_avg_price + positionDirection * tpTicks * syminfo.mintick
+rawStop = strategy.position_avg_price - positionDirection * slTicks * syminfo.mintick
+liveStop = beArmed ? strategy.position_avg_price + positionDirection * beSecure : rawStop
+plot(strategy.position_size != 0 ? targetPrice : na, title = "Take-profit",
+     color = color.lime, style = plot.style_linebr)
+plot(strategy.position_size != 0 ? liveStop : na, title = "Stop-loss",
+     color = beArmed ? color.orange : color.red, style = plot.style_linebr)
+
+// The round turn is what a secured exit has to clear before the Strategy Tester calls it a win,
+// and it is not zero. Commission is read from the run itself (gross minus net) and converted to
+// POINTS through this symbol's point value; slippage is charged in TICKS on both sides and never
+// appears in the commission figure, so it is added explicitly.
+atrNow = ta.ema(ta.tr(true), 14)
+var table hud = table.new(position.top_right, 2, 5, border_width = 1)
+if barstate.islast
+    closed = math.max(strategy.closedtrades, 1)
+    commPer = (strategy.grossprofit - strategy.netprofit) / closed
+    roundTurn = commPer / math.max(syminfo.pointvalue, 1e-9) + 2.0 * syminfo.mintick
+    table.cell(hud, 0, 0, "window", text_size = size.tiny)
+    table.cell(hud, 1, 0, useSession ? str.tostring(sessStart) + "-" + str.tostring(sessEnd) + " NY"
+         + (useFlat ? ", stop at end" : "") : "all hours", text_size = size.tiny)
+    table.cell(hud, 0, 1, "trades", text_size = size.tiny)
+    table.cell(hud, 1, 1, str.tostring(strategy.closedtrades), text_size = size.tiny)
+    table.cell(hud, 0, 2, "TP / SL", text_size = size.tiny)
+    table.cell(hud, 1, 2, str.tostring(tpPoints, "#.#") + " / " + str.tostring(slPoints, "#.#")
+         + " pt = " + str.tostring(tpPoints / atrNow, "#.##") + " / "
+         + str.tostring(slPoints / atrNow, "#.##") + " ATR", text_size = size.tiny)
+    secTxt = beSecure > roundTurn ? "CLEARS (+" + str.tostring(beSecure - roundTurn, "#.##") + ")" : "BELOW -- still a loss"
+    secCol = beMode == "Off" ? color.gray : beSecure > roundTurn ? color.green : color.red
+    table.cell(hud, 0, 3, "breakeven", text_size = size.tiny)
+    table.cell(hud, 1, 3, beMode == "Off" ? "off"
+         : "arm " + str.tostring(bePoints, "#.#") + " pt, secure " + str.tostring(beSecure, "#.#")
+           + " vs round turn " + str.tostring(roundTurn, "#.##") + "  " + secTxt,
+         text_size = size.tiny, text_color = secCol)
+    table.cell(hud, 0, 4, "edge claimed", text_size = size.tiny)
+    table.cell(hud, 1, 4, "none", text_size = size.tiny, text_color = color.red)

@@ -1,0 +1,5 @@
+B2. AT MATCHED LAG, DO THE TYPES CONVERGE? -- CHOP <= 40, CROSS mode, both timeframes
+==============================================================================================================================
+   If TYPE were a real lever the rows would spread. If LAG is the only thing an MA
+   contributes, each row collapses and the COLUMN (lag) is where the variation lives.
+

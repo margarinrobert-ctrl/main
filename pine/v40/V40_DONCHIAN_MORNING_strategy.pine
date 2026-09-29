@@ -1,0 +1,230 @@
+// ================================================================================================
+// V40 -- DONCHIAN 40/25 LONG, MA(200) SUPPORT, 07:00-11:00 NEW YORK, FLAT AT 11:00
+//
+// Built to a fixed brief: entry channel 40, exit channel 25, MA(200) as support/resistance, long
+// only, entries 07:00-11:00 New York with a hard flatten at 11:00, and additional filters chosen to
+// be INDEPENDENT of one another. The ATR stop was handed back to be chosen, and was swept.
+//
+// ================================ WHAT THE MEASUREMENTS SAY ================================
+//
+// 1. THE BASE IS A LOSER IN THIS WINDOW, AT EVERY STOP. NQ 30m research block, ten stop multiples
+//    from 1.0 to 3.5 x ATR: profit factor 0.75 to 0.90, every one negative. The curve is
+//    flat-to-falling, so no stop rescues it. 2.00N is the least bad and is the default.
+//
+// 2. THE WINDOW IS THE PROBLEM, AND NOT THE PART YOU MIGHT EXPECT. Same rule, same stop:
+//
+//      window          research PF   LOCKED PF   locked $/trade
+//      07:00-11:00        0.903        0.957        -2.63       <- the brief
+//      07:30-11:00        0.914        1.057        +3.25
+//      08:30-11:00        0.850        1.067        +3.54
+//      09:30-11:00        0.713        0.699       -16.42       <- the WORST row
+//      09:30-16:00        1.208        1.152       +11.60
+//      all hours, no flatten  1.366     1.140       +16.61
+//
+//    This branch's standing finding is that 07:00-09:00 is the worst part of the day and that a
+//    09:30 start is what rescues an intraday window. FOR THIS GEOMETRY THAT IS BACKWARDS: 09:30-
+//    11:00 is the worst of the seven. What costs the money is the 11:00 FLATTEN, not the 07:00
+//    start -- a 40-bar channel with a 25-bar exit needs room to run, and a four-hour box truncates
+//    exactly the trades the exit exists to hold. All hours with no flatten is the best row in the
+//    table on both blocks.
+//
+// 3. ONE FILTER OF SEVENTEEN EARNS ITS PLACE, AND IT IS THE MA200 -- READ AS A DISTANCE.
+//    Seventeen candidate features in eight declared concept families, each cut at two
+//    research-derived quantiles and scored against a RANDOM FILTER OF THE SAME SELECTIVITY:
+//
+//      feature                family     keep    PF    $/trade   control $/t     p
+//      dist_ma200_atr         LOCATION   0.50   1.171    +7.92      -5.85      0.017   <- admitted
+//      dist_ma200_atr         LOCATION   0.65   1.081    +3.60      -6.39      0.022
+//      ma200_slope_atr        LOCATION   0.65   1.070    +3.02      -6.39      0.035
+//      adx14                  TREND      0.50   1.057    +2.52      -5.85      0.090
+//      chop/range efficiency  CHOP       0.65   1.002    +0.08      -6.39      0.092
+//      ...28 more, all p > 0.10
+//
+//    3 of 34 cells clear p <= 0.05 where 1.7 are expected by chance, and all three are the SAME
+//    feature family. So this is one finding, not three.
+//
+//    NOTE WHAT THE FEATURE IS. Not "close above the MA200" -- that is the base condition and it is
+//    worth nothing on its own. It is HOW FAR above, measured in ATR, keeping the top half. The
+//    same lesson as this branch's KAMA study: a moving average is priced by its DISTANCE, not by
+//    the average.
+//
+//    With it: NQ research PF 0.903 -> 1.171, LOCKED 0.957 -> 1.208 (+$11.24/trade on 46 trades).
+//
+// 4. INDEPENDENCE WAS ENFORCED IN TWO STAGES, family first and correlation second, because the
+//    recorded failure mode is a set of picks that pass a |rho| ceiling and are all the same idea.
+//    Correlations were computed ON THE SIGNAL BARS, not across the whole tape -- a filter only ever
+//    acts on breakout bars in the window. Two pairs turned out to be EXACTLY the same reading
+//    (rho 1.0000): CHOP(14) against range efficiency, and close-position against upper-wick share.
+//
+// 5. IT IS NOT SIGNIFICANT AND IT DOES NOT TRANSFER CLEANLY. Bootstrap P(mean <= 0) = 0.300 on
+//    both blocks, 46 locked trades. Frozen and run on two markets that had no part in any of it:
+//    US100 base 0.899/1.055 -> 1.001/1.328 (helps), US30 base 0.970/0.708 -> 0.950/0.757 (does
+//    not). And the realised locked drawdown of $1,556 EXCEEDS the Monte Carlo p99 of $1,457, so
+//    the realised path was unlucky rather than lucky -- size for more than you see here.
+//
+// So: the geometry is as specified, the one filter that survived is on, and the honest reading is
+// that the 11:00 flatten costs more than the filters recover. Turn the session off and the same
+// rule reads PF 1.366 research / 1.140 locked.
+//
+// Research tooling for education and analysis. NOT FINANCIAL ADVICE.
+// ================================================================================================
+//@version=6
+strategy("V40 Donchian 40/25 Morning Long", overlay = true,
+         default_qty_type = strategy.fixed, default_qty_value = 1,
+         initial_capital = 100000, currency = currency.USD,
+         commission_type = strategy.commission.cash_per_order, commission_value = 0.72,
+         slippage = 1, calc_on_every_tick = false, process_orders_on_close = false,
+         pyramiding = 0)
+
+// ------------------------------------------------------------------------------------------------
+// inputs
+// ------------------------------------------------------------------------------------------------
+gE = "Geometry (fixed by the brief, except the stop)"
+entryN = input.int(40, "Donchian entry length", minval = 2, group = gE)
+exitN  = input.int(25, "Donchian exit channel", minval = 2, group = gE)
+atrLen = input.int(14, "ATR length", minval = 2, group = gE,
+     tooltip = "ATR here is ema(TR, n), NOT ta.atr -- ta.atr is Wilder's RMA and a different series.")
+stopN  = input.float(2.0, "ATR stop multiple", minval = 0.1, step = 0.25, group = gE,
+     tooltip = "Swept 1.0 to 3.5 on the research block: profit factor 0.75-0.90, every one negative, curve flat-to-falling. 2.00 is the least bad, not a good one.")
+useTp  = input.bool(false, "Use a take profit", group = gE,
+     tooltip = "No take profit has beaten every target tested on this branch nine times.")
+tpR    = input.float(2.0, "  target, in R", minval = 0.1, step = 0.25, group = gE)
+
+gM = "MA(200) support"
+maLen  = input.int(200, "MA length", minval = 2, group = gM)
+useMa  = input.bool(true, "Require close above the MA (support)", group = gM,
+     tooltip = "This is the base condition. On its own it is worth nothing -- the DISTANCE filter below is what carried the result.")
+
+gF = "The one filter that beat a same-selectivity control (p = 0.017)"
+useDist  = input.bool(true, "Require distance above the MA, in ATR", group = gF,
+     tooltip = "Top half of breakout bars by (close - MA) / ATR. NQ research PF 0.903 -> 1.171, LOCKED 0.957 -> 1.208. A moving average is priced by its distance, not by the average.")
+distMode = input.string("adaptive percentile", "  threshold", group = gF,
+     options = ["adaptive percentile", "fixed ATR multiple"],
+     tooltip = "Adaptive re-derives the cut from this chart's own recent breakout bars, which is what the research did per market. Fixed is reproducible but market-specific.")
+distPct  = input.float(50, "  keep the top % of breakout bars", minval = 5, maxval = 100,
+     step = 5, group = gF)
+distLook = input.int(250, "  lookback for the percentile", minval = 30, group = gF)
+distFix  = input.float(1.0, "  fixed distance, in ATR", minval = 0.0, step = 0.1, group = gF)
+
+gX = "Candidates that did NOT earn a place -- default OFF, control p in each tooltip"
+useAdx  = input.bool(false, "ADX(14) floor", group = gX,
+     tooltip = "control p 0.090 at the 50% rung, and rho 0.369 against the distance filter on signal bars -- the selector rejected it as not independent.")
+adxMin  = input.float(20, "  ADX floor", minval = 1, group = gX)
+useChop = input.bool(false, "CHOP(14) ceiling", group = gX,
+     tooltip = "control p 0.092. Note CHOP and range efficiency measured rho 1.0000 on signal bars -- they are the same reading.")
+chopMax = input.float(50, "  CHOP ceiling", minval = 1, maxval = 100, group = gX)
+useBody = input.bool(false, "Body share of range floor", group = gX,
+     tooltip = "control p 0.110. Body share and close position measured rho 0.653; close position and upper-wick share measured rho 1.0000.")
+bodyMin = input.float(0.4, "  body / range", minval = 0.0, maxval = 1.0, step = 0.05, group = gX)
+
+gS = "Session (New York)"
+useSess = input.bool(true, "Restrict entries and flatten", group = gS,
+     tooltip = "Turning this OFF is the single largest measured improvement: all hours reads PF 1.366 research / 1.140 locked against 0.903 / 0.957 for the 07:00-11:00 box.")
+startH  = input.int(7,  "Entries from, hour", minval = 0, maxval = 23, group = gS)
+startM  = input.int(0,  "  minute", minval = 0, maxval = 59, group = gS)
+endH    = input.int(11, "Entries until, hour", minval = 0, maxval = 23, group = gS)
+endM    = input.int(0,  "  minute", minval = 0, maxval = 59, group = gS)
+flatH   = input.int(11, "Flatten at, hour", minval = 0, maxval = 23, group = gS)
+flatM   = input.int(0,  "  minute", minval = 0, maxval = 59, group = gS)
+
+// ------------------------------------------------------------------------------------------------
+// indicators
+// ------------------------------------------------------------------------------------------------
+atrN  = ta.ema(ta.tr(true), atrLen)
+donHi = ta.highest(high, entryN)[1]     // entry channel EXCLUDES this bar, so a break is possible
+donLo = ta.lowest(low, exitN)           // exit channel is set at this close and is live next bar
+maV   = ta.sma(close, maLen)
+
+// distance above the MA, in ATR -- the feature that carried the result
+distAtr = (close - maV) / math.max(atrN, syminfo.mintick)
+
+chopV = 100 * math.log10(math.sum(ta.tr(true), 14) /
+     math.max(ta.highest(high, 14) - ta.lowest(low, 14), syminfo.mintick)) / math.log10(14)
+[plusDI, minusDI, adxV] = ta.dmi(14, 14)   // ta.dmi returns [+DI, -DI, ADX] -- ADX is the THIRD
+bodyShare = math.abs(close - open) / math.max(high - low, syminfo.mintick)
+
+// BARE `hour`/`minute` ARE EXCHANGE TIME in Pine -- Chicago for CME, an hour off New York.
+modNY = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+startMod = startH * 60 + startM
+endMod   = endH * 60 + endM
+flatMod  = flatH * 60 + flatM
+inWin  = not useSess or (modNY >= startMod and modNY < endMod)
+atFlat = useSess and modNY >= flatMod
+
+// ------------------------------------------------------------------------------------------------
+// the adaptive distance threshold
+//
+// The research cut the top 50% of BREAKOUT bars per market, so a fixed number would be
+// market-specific. This keeps a rolling window of the distance seen on recent breakout bars and
+// takes the requested percentile of it. Every write is guarded by barstate.isconfirmed -- guarding
+// the entries alone is not enough, and guarding SOME of a coupled set desynchronises it.
+// ------------------------------------------------------------------------------------------------
+brk = close > donHi
+var array<float> distHist = array.new_float()
+
+if barstate.isconfirmed and brk and not na(distAtr) and not na(maV)
+    array.push(distHist, distAtr)
+    if array.size(distHist) > distLook
+        array.shift(distHist)
+
+distThr = distMode == "fixed ATR multiple" ? distFix
+     : array.size(distHist) >= 30 ? array.percentile_nearest_rank(distHist, 100 - distPct) : na
+
+distOk = not useDist or (not na(distAtr) and not na(distThr) and distAtr >= distThr)
+maOk   = not useMa or close > maV
+adxOk  = not useAdx or (not na(adxV) and adxV >= adxMin)
+chopOk = not useChop or (not na(chopV) and chopV <= chopMax)
+bodyOk = not useBody or bodyShare >= bodyMin
+
+fire = brk and maOk and distOk and adxOk and chopOk and bodyOk and inWin and not atFlat
+     and not na(atrN) and atrN > 0
+
+// ------------------------------------------------------------------------------------------------
+// orders
+//
+// The exit marker is recorded ABOVE the entry test, and strategy.closedtrades is counted rather
+// than watching position_size[1], which misses a trade that opens and stops out inside one bar.
+// The stop is anchored to the SIGNAL BAR'S CLOSE, because at the moment the exit order is written
+// the fill price does not exist.
+// ------------------------------------------------------------------------------------------------
+var int   lastExitBar = -1
+var int   nClosed = 0
+var float stopLvl = na
+var float tgtLvl = na
+
+if barstate.isconfirmed and strategy.closedtrades > nClosed
+    nClosed := strategy.closedtrades
+    lastExitBar := bar_index
+
+if barstate.isconfirmed and fire and strategy.position_size == 0 and lastExitBar != bar_index
+    risk = stopN * atrN
+    stopLvl := close - risk
+    tgtLvl := useTp ? close + tpR * risk : na
+    strategy.entry("L", strategy.long)
+
+if strategy.position_size > 0
+    strategy.exit("xL", from_entry = "L", stop = stopLvl, limit = useTp ? tgtLvl : na)
+
+// the channel exit is a CLOSE below the prior N-bar low, so it is an order at the close, not a
+// resting stop -- a resting stop would fire intrabar and is a different rule
+if barstate.isconfirmed and strategy.position_size > 0 and close < donLo
+    strategy.close("L", comment = "channel")
+
+// strategy.close_all cannot sell the close of the bar that triggers it -- it fills at the NEXT
+// bar's open, and the research engine was written to match the script rather than the reverse.
+if barstate.isconfirmed and atFlat and strategy.position_size != 0
+    strategy.close_all(comment = "flat 11:00")
+
+// ------------------------------------------------------------------------------------------------
+// display
+// ------------------------------------------------------------------------------------------------
+plot(donHi, "Donchian 40 entry", color.new(color.teal, 40), 1)
+plot(donLo, "Donchian 25 exit", color.new(color.maroon, 40), 1)
+plot(maV, "MA 200 support", color.new(color.blue, 0), 2)
+plot(useDist and not na(distThr) ? maV + distThr * atrN : na, "distance gate",
+     color.new(color.orange, 30), 1, plot.style_linebr)
+plot(strategy.position_size > 0 ? stopLvl : na, "stop", color.new(color.red, 0), 1,
+     plot.style_linebr)
+plotshape(fire and strategy.position_size == 0, "entry", shape.triangleup, location.belowbar,
+     color.new(color.teal, 0), size = size.tiny)
+bgcolor(useSess and not inWin ? color.new(color.gray, 94) : na, title = "outside the window")

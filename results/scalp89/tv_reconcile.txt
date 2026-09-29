@@ -1,0 +1,39 @@
+
+======================================================================================================================
+1. EXIT RESOLUTION -- could 'bar magnifier' (1-minute fills inside 5m bars) explain it?
+======================================================================================================================
+  Same 5m signals, same 5m-bar ATR, same fill at the next 5m open; the stop/target/trail are
+  walked on the TRUE 1-MINUTE path instead of the 5m bar's OHLC. This is what bar magnifier does.
+                                                           n      PF   win%    $ 5 MNQ  hold   exits
+  as configured (15/8 trail), 5m OHLC path [research]   1309   0.393   49.9    -92,951     2   trail62% stop37% target1%
+  as configured (15/8 trail), TRUE 1-MINUTE path [research]  1353   0.428   57.1    -75,084    10   trail62% stop36% target2%
+  trail OFF, 5m OHLC path [research]                    1178   0.863   38.8    -27,612     5   stop61% target39%
+  trail OFF, TRUE 1-MINUTE path [research]              1210   0.890   38.7    -20,852    27   stop61% target39%
+  If the 1-minute walk were dramatically better, bar magnifier would be the explanation. It is not.
+
+======================================================================================================================
+2. THE WINDOW -- 'Last 365 days' is Sep 2025 -> Sep 2026; this data ends 2025-12-11
+======================================================================================================================
+  So 9 of the 12 months on your screen are data I do not have. What I can show is the overlap
+  (2025-09-04 -> 2025-12-11) and the last 365 days I DO have, in a bar-close model, per timeframe.
+                                                           n      PF   win%    $ 5 MNQ  hold   exits
+  5m as configured, 2025-09-04 -> 2025-12-11 (overlap)   192   0.347   39.6    -20,622     1   trail62% stop37% target1%
+  5m as configured, last 365 days of my data             769   0.444   46.3    -66,734     1   trail66% stop33% target0%
+  5m as configured, all 3 years                         2105   0.413   48.6   -160,794     2   trail64% stop36% target1%
+  15m as configured, 2025-09-04 -> 2025-12-11 (overlap)    71   0.652   52.1     -5,886     1   trail66% stop34%
+  15m as configured, last 365 days of my data            274   0.667   46.4    -24,176     1   trail65% stop35%
+  15m as configured, all 3 years                         769   0.634   48.1    -51,650     1   trail68% stop32% target0%
+  287 trades in your 365 days is ~1.1 a day -- closest to the 15m cadence here (about 240/yr), not 5m (~650).
+
+======================================================================================================================
+3. WHAT AN 84% WIN RATE WOULD NEED
+======================================================================================================================
+  bar-close model, as configured: win 49.9%  avg win +9.3 pts  avg loss -23.4 pts  -> PF 0.395
+  same avg win / avg loss at a 60% win rate -> PF 0.595
+  same avg win / avg loss at a 70% win rate -> PF 0.925
+  same avg win / avg loss at a 84% win rate -> PF 2.082
+  PF 3.08 at 84% needs avg win / avg loss = 0.59 -- i.e. the +7 trail wins against -16 stops, but
+  winning 5 times in 6. At the bar close this rule wins about 1 in 2. The extra wins have to come
+  from ENTERING at prices the bar close does not offer: an intrabar touch of the EMA8 bought at
+  the touch, then the trail locking +7 on the bounce. That is what an unguarded `strategy.entry`
+  does with an intrabar execution option ticked, and it is why the script is guarded in v2.

@@ -1,0 +1,120 @@
+  .. FTM_ORB      NQ          342 trades
+  .. APM_VWAP     NQ          104 trades
+  .. APM_VWAP     US100       308 trades
+  .. APM_VWAP     US30        267 trades
+  .. TRENDDAY     NQ           43 trades
+  .. TRENDDAY     US100       125 trades
+  .. TRENDDAY     US30        106 trades
+  .. TRENDDAY     US30_ISO     24 trades
+  .. TFI          NQ          226 trades
+/home/user/main/research/mrl/mrl_bar.py:241: RuntimeWarning: invalid value encountered in divide
+  close_pos_bar=np.where(h > l, (c - l) / (h - l), np.nan),
+  .. TFI          US100       613 trades
+/home/user/main/research/mrl/mrl_bar.py:241: RuntimeWarning: invalid value encountered in divide
+  close_pos_bar=np.where(h > l, (c - l) / (h - l), np.nan),
+  .. TFI          US30        577 trades
+/home/user/main/research/mrl/mrl_bar.py:241: RuntimeWarning: invalid value encountered in divide
+  close_pos_bar=np.where(h > l, (c - l) / (h - l), np.nan),
+  .. TFI          US30_ISO    128 trades
+  .. V56_CVD      NQ          244 trades
+  .. IBS_SESSION  NQ          114 trades
+  .. IBS_SESSION  US100       319 trades
+  .. IBS_SESSION  US30        298 trades
+  .. IBS_SESSION  US30_ISO     74 trades
+  .. CMMA         NQ          748 trades
+  .. CMMA         US100      2262 trades
+  .. VWAP_DRIFT   NQ          651 trades
+  .. VWAP_DRIFT   US100      2154 trades
+  .. VWAP_DRIFT   US30       1742 trades
+  .. VWAP_DRIFT   US30_ISO    469 trades
+
+==============================================================================================================
+EVERY CANDIDATE, EVERY FEED, EVERY BLOCK -- percent of entry price, one unit
+==============================================================================================================
+
+FTM_ORB  --  FTM opening-range breakout, NQ 1m
+    NQ        research     IS  n   195  pct/trade +0.0647  %/yr   +6.38  PF  1.37  win  46.2%  Sharpe +1.31  maxDD   5.73%  ret/DD  2.20
+    NQ        locked       OOS n   147  pct/trade +0.0456  %/yr   +6.28  PF  1.27  win  49.0%  Sharpe +1.17  maxDD   4.28%  ret/DD  1.57
+
+APM_VWAP  --  ATR phase momentum + session VWAP
+    NQ        research     IS  n    70  pct/trade +0.1207  %/yr   +4.28  PF  1.54  win  58.6%  Sharpe +1.01  maxDD   3.50%  ret/DD  2.42
+    NQ        locked       OOS n    34  pct/trade +0.2731  %/yr   +8.76  PF  4.17  win  67.6%  Sharpe +2.78  maxDD   1.09%  ret/DD  8.54
+    US100     research     IS  n   176  pct/trade +0.1182  %/yr   +4.00  PF  1.54  win  57.4%  Sharpe +0.91  maxDD   4.28%  ret/DD  4.86
+    US100     validation   OOS n    70  pct/trade +0.2741  %/yr   +9.39  PF  1.95  win  64.3%  Sharpe +1.45  maxDD   4.04%  ret/DD  4.75
+    US100     test         OOS n    62  pct/trade +0.0714  %/yr   +2.47  PF  1.28  win  58.1%  Sharpe +0.39  maxDD   7.26%  ret/DD  0.61
+    US30      research     IS  n   148  pct/trade -0.0343  %/yr   -0.96  PF  0.86  win  48.6%  Sharpe -0.25  maxDD   9.38%  ret/DD -0.54
+    US30      validation   OOS n    68  pct/trade +0.0621  %/yr   +2.07  PF  1.25  win  45.6%  Sharpe +0.47  maxDD   5.80%  ret/DD  0.73
+    US30      test         OOS n    51  pct/trade +0.0125  %/yr   +0.41  PF  1.07  win  51.0%  Sharpe +0.14  maxDD   2.77%  ret/DD  0.23
+
+TRENDDAY  --  trend day, fade the open to an untouched EMA
+    NQ        research     IS  n    26  pct/trade +0.1916  %/yr   +2.63  PF  5.22  win  88.5%  Sharpe +1.92  maxDD   0.91%  ret/DD  5.46
+    NQ        locked       OOS n    17  pct/trade +0.2127  %/yr   +3.53  PF  4.13  win  82.4%  Sharpe +1.68  maxDD   0.76%  ret/DD  4.73
+    US100     research     IS  n    63  pct/trade +0.0322  %/yr   +0.40  PF  1.15  win  66.7%  Sharpe +0.16  maxDD   4.96%  ret/DD  0.41
+    US100     validation   OOS n    38  pct/trade +0.2297  %/yr   +4.42  PF  1.99  win  78.9%  Sharpe +1.08  maxDD   2.58%  ret/DD  3.39
+    US100     test         OOS n    24  pct/trade +0.2352  %/yr   +3.28  PF  8.74  win  83.3%  Sharpe +2.15  maxDD   0.67%  ret/DD  8.40
+    US30      research     IS  n    64  pct/trade +0.0034  %/yr   +0.04  PF  1.02  win  59.4%  Sharpe +0.02  maxDD   5.53%  ret/DD  0.04
+    US30      validation   OOS n    21  pct/trade +0.0875  %/yr   +0.93  PF  1.81  win  76.2%  Sharpe +0.74  maxDD   1.08%  ret/DD  1.70
+    US30      test         OOS n    21  pct/trade +0.0414  %/yr   +0.58  PF  1.17  win  61.9%  Sharpe +0.14  maxDD   3.07%  ret/DD  0.28
+    US30_ISO  research     IS  n    20  pct/trade +0.1070  %/yr   +1.59  PF  1.46  win  75.0%  Sharpe +0.36  maxDD   2.93%  ret/DD  0.73
+    US30_ISO  locked       OOS n     4  pct/trade +0.2565  %/yr   +1.59  PF 1025928711.65  win 100.0%  Sharpe +2.09  maxDD   0.00%  ret/DD   nan
+
+TFI  --  Donchian 55 + ADX + prior-session-high gate
+    NQ        research     IS  n   145  pct/trade +0.0745  %/yr   +4.54  PF  1.40  win  50.3%  Sharpe +1.07  maxDD   3.35%  ret/DD  3.22
+    NQ        locked       OOS n    81  pct/trade +0.0545  %/yr   +3.45  PF  1.30  win  55.6%  Sharpe +0.66  maxDD   2.55%  ret/DD  1.73
+    US100     research     IS  n   362  pct/trade +0.0469  %/yr   +2.71  PF  1.28  win  53.9%  Sharpe +0.73  maxDD  10.30%  ret/DD  1.65
+    US100     validation   OOS n   125  pct/trade +0.1503  %/yr   +7.64  PF  1.64  win  57.6%  Sharpe +1.40  maxDD   5.12%  ret/DD  3.67
+    US100     test         OOS n   126  pct/trade +0.0390  %/yr   +2.27  PF  1.22  win  51.6%  Sharpe +0.61  maxDD   2.84%  ret/DD  1.73
+    US30      research     IS  n   335  pct/trade +0.0007  %/yr   +0.04  PF  1.00  win  46.3%  Sharpe +0.01  maxDD   8.30%  ret/DD  0.03
+    US30      validation   OOS n   134  pct/trade +0.0046  %/yr   +0.25  PF  1.02  win  49.3%  Sharpe +0.07  maxDD   4.38%  ret/DD  0.14
+    US30      test         OOS n   108  pct/trade -0.0116  %/yr   -0.66  PF  0.93  win  42.6%  Sharpe -0.19  maxDD   5.79%  ret/DD -0.22
+    US30_ISO  iso_pre2026  OOS n    90  pct/trade +0.0124  %/yr   +0.66  PF  1.08  win  48.9%  Sharpe +0.21  maxDD   3.72%  ret/DD  0.30
+    US30_ISO  iso_2026     OOS n    38  pct/trade -0.1059  %/yr   -4.97  PF  0.51  win  36.8%  Sharpe -1.93  maxDD   5.18%  ret/DD -0.78
+
+V56_CVD  --  CVD exhausted sellers on a Donchian breakout, NQ 30m
+    NQ        research     IS  n   157  pct/trade +0.1203  %/yr   +7.94  PF  1.73  win  35.7%  Sharpe +1.38  maxDD   2.05%  ret/DD  9.21
+    NQ        locked       OOS n    87  pct/trade +0.1371  %/yr   +9.25  PF  1.58  win  40.2%  Sharpe +1.17  maxDD   7.83%  ret/DD  1.52
+
+IBS_SESSION  --  IBS session EA
+    NQ        research     IS  n    79  pct/trade +0.3227  %/yr  +13.47  PF  1.66  win  62.0%  Sharpe +1.36  maxDD   8.87%  ret/DD  2.87
+    NQ        locked       OOS n    35  pct/trade +0.3171  %/yr  +10.84  PF  1.41  win  54.3%  Sharpe +0.70  maxDD   8.01%  ret/DD  1.38
+    US100     research     IS  n   167  pct/trade +0.3708  %/yr  +12.11  PF  1.58  win  62.3%  Sharpe +1.05  maxDD   8.42%  ret/DD  7.35
+    US100     validation   OOS n    96  pct/trade +0.5204  %/yr  +25.27  PF  1.69  win  61.5%  Sharpe +1.52  maxDD   9.97%  ret/DD  5.01
+    US100     test         OOS n    56  pct/trade +0.2255  %/yr   +7.35  PF  1.29  win  58.9%  Sharpe +0.52  maxDD  11.49%  ret/DD  1.10
+    US30      research     IS  n   174  pct/trade +0.1213  %/yr   +4.15  PF  1.20  win  49.4%  Sharpe +0.38  maxDD  19.43%  ret/DD  1.09
+    US30      validation   OOS n    78  pct/trade +0.2415  %/yr   +9.64  PF  1.40  win  55.1%  Sharpe +0.87  maxDD  10.52%  ret/DD  1.79
+    US30      test         OOS n    46  pct/trade -0.0129  %/yr   -0.39  PF  0.98  win  54.3%  Sharpe -0.06  maxDD   8.04%  ret/DD -0.07
+    US30_ISO  iso_pre2026  OOS n    47  pct/trade +0.0470  %/yr   +1.58  PF  1.10  win  57.4%  Sharpe +0.23  maxDD   8.29%  ret/DD  0.27
+    US30_ISO  iso_2026     OOS n    27  pct/trade +0.2662  %/yr  +10.78  PF  1.68  win  55.6%  Sharpe +1.38  maxDD   3.77%  ret/DD  1.91
+
+CMMA  --  daily CMMA contrarian target
+    NQ        research     IS  n   523  pct/trade +0.0040  %/yr   +1.00  PF  1.18  win  48.9%  Sharpe +0.64  maxDD   1.01%  ret/DD  2.05
+    NQ        locked       OOS n   225  pct/trade +0.0091  %/yr   +2.29  PF  1.30  win  50.2%  Sharpe +0.69  maxDD   1.35%  ret/DD  1.51
+    US100     research     IS  n  1583  pct/trade +0.0010  %/yr   +0.26  PF  1.03  win  47.2%  Sharpe +0.12  maxDD   3.73%  ret/DD  0.43
+    US100     locked       OOS n   679  pct/trade +0.0065  %/yr   +1.63  PF  1.23  win  49.0%  Sharpe +0.66  maxDD   1.62%  ret/DD  2.71
+
+VWAP_DRIFT  --  RTH VWAP drift EVO 1
+    NQ        research     IS  n   425  pct/trade -0.0159  %/yr   -2.85  PF  0.88  win  36.0%  Sharpe -0.71  maxDD   8.51%  ret/DD -0.80
+    NQ        locked       OOS n   226  pct/trade -0.0126  %/yr   -2.21  PF  0.92  win  35.8%  Sharpe -0.40  maxDD  10.48%  ret/DD -0.27
+    US100     research     IS  n  1178  pct/trade +0.0040  %/yr   +0.75  PF  1.03  win  39.0%  Sharpe +0.13  maxDD  13.22%  ret/DD  0.36
+    US100     validation   OOS n   538  pct/trade +0.0028  %/yr   +0.60  PF  1.01  win  36.4%  Sharpe +0.08  maxDD  14.36%  ret/DD  0.10
+    US100     test         OOS n   438  pct/trade -0.0058  %/yr   -1.17  PF  0.96  win  37.4%  Sharpe -0.22  maxDD  10.57%  ret/DD -0.24
+    US30      research     IS  n   973  pct/trade -0.0186  %/yr   -2.85  PF  0.86  win  36.1%  Sharpe -0.67  maxDD  20.14%  ret/DD -0.90
+    US30      validation   OOS n   445  pct/trade -0.0126  %/yr   -2.27  PF  0.90  win  34.4%  Sharpe -0.52  maxDD   9.84%  ret/DD -0.57
+    US30      test         OOS n   324  pct/trade +0.0301  %/yr   +5.13  PF  1.30  win  42.0%  Sharpe +1.32  maxDD   2.41%  ret/DD  4.05
+    US30_ISO  research     IS  n   323  pct/trade +0.0439  %/yr   +8.34  PF  1.44  win  43.3%  Sharpe +1.98  maxDD   2.18%  ret/DD  6.52
+    US30_ISO  locked       OOS n   146  pct/trade -0.0232  %/yr   -4.19  PF  0.80  win  37.0%  Sharpe -1.30  maxDD   5.82%  ret/DD -0.58
+
+==============================================================================================================
+RANKING -- research block only, feeds equal-weighted, a feed needs >= 25 trades
+==============================================================================================================
+  strategy       feeds  trades     %/yr  pct/trade     PF  Sharpe  trades/yr
+  IBS_SESSION        3     420    +9.91    +0.2716   1.48   +0.93       36.2
+  V56_CVD            1     157    +7.94    +0.1203   1.73   +1.38       66.1
+  FTM_ORB            1     195    +6.38    +0.0647   1.37   +1.31       98.7
+  APM_VWAP           3     394    +2.44    +0.0682   1.31   +0.55       32.4
+  TFI                3     842    +2.43    +0.0407   1.23   +0.61       57.1
+  TRENDDAY           3     153    +1.02    +0.0757   2.46   +0.70       12.8
+  VWAP_DRIFT         4    2899    +0.85    +0.0033   1.05   +0.18      177.4
+  CMMA               2    2106    +0.63    +0.0025   1.11   +0.38      252.0
+
+  TOP 5: IBS_SESSION, V56_CVD, FTM_ORB, APM_VWAP, TFI

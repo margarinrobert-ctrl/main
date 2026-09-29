@@ -1,0 +1,284 @@
+// ================================================================================================
+// V54 -- KAMA on an independent timeframe, and the four CVD structure patterns tested SEPARATELY.
+//
+// ================ ONE OF THE FOUR CVD PATTERNS CLEARS BOTH BLOCKS, AND IT IS ================
+// ============================ EXHAUSTED SELLERS: price LL + CVD HL ============================
+// Base: NQ 30m, Donchian 20 in / 20 out, 2.0N stop, one unit, long, no target, max hold 480 bars.
+// Each condition against a RANDOM FILTER keeping the same share of the same signals, 2,000 draws.
+// Low p is good. Research is the first 65% of bars; locked is the last 35%, read once.
+//
+//   condition                                   research                 LOCKED
+//   base, no condition (vs a random ENTRY)   +0.0945 PF1.16 p 0.057   +0.1280 PF1.24 p 0.127
+//   EXHAUSTED SELLERS   k3 w20   LL + HL     +0.3509 PF1.70 p 0.001   +0.3176 PF1.65 p 0.009  <==
+//   ABSORBED SELLING    k3 w20   HL + LL     +0.2308 PF1.40 p 0.045   +0.0329 PF1.06 p 0.903
+//   EXHAUSTED BUYERS    k3 w20   HH + LH     +0.2432 PF1.45 p 0.046   +0.1973 PF1.36 p 0.179
+//   ABSORBED BUYING     k3 w20   LH + HH     +0.1404 PF1.24 p 0.539   -0.0109 PF0.98 p 0.926
+//   EXHAUSTED SELLERS   k5 w20                +0.3853 PF1.76 p 0.004   +0.1631 PF1.30 p 0.304
+//   ABSORBED SELLING    k5 w20                +0.3437 PF1.60 p 0.005   +0.1569 PF1.28 p 0.320
+//   EXHAUSTED BUYERS    k5 w20                +0.3598 PF1.64 p 0.009   +0.1930 PF1.34 p 0.225
+//   ABSORBED BUYING     k5 w20                -0.0852 PF0.87 p 0.989   -0.0167 PF0.98 p 0.804
+//
+// EXHAUSTED SELLERS at k=3 is the only row that clears on BOTH blocks, and it DECAYS from research
+// to locked (+0.3509 -> +0.3176), which is the right shape -- a rule chosen on research should look
+// better there. Testing the four separately is what made this visible: collapsed into one "CVD
+// divergence" flag they would have averaged into nothing.
+//
+// AND THE SIGNS BEHAVE AS THE STRUCTURE PREDICTS FOR A LONG-ONLY SYSTEM. The two bullish patterns
+// score higher than the two bearish ones on research, and ABSORBED BUYING -- aggressive buying
+// being absorbed by passive sellers, the most bearish of the four -- is the only NEGATIVE row on
+// both blocks (-0.0852 and -0.0109) and the only one that loses to its control at k5 by a mile
+// (p 0.989). That is a coherent story and not a fitted one.
+//
+// CAVEATS THAT STAY ATTACHED. n = 88 on the locked block, which is under 100. One market, one
+// instrument -- CVD needs 1-minute bars and NQ is the only feed here that has them, so there is NO
+// cross-market read. And the CVD is a PROXY (below). This is one confirmation, not a result.
+//
+// ==================================== WHAT THE CVD ACTUALLY IS ====================================
+// TRUE cumulative volume delta needs the AGGRESSOR SIDE of every trade. No feed on this branch
+// carries it. This script computes the delta ITSELF with `request.security_lower_tf`, rather than
+// calling `ta.requestVolumeDelta`, so the rule here is provably identical to the one the research
+// measured: sign each LOWER-TIMEFRAME bar's whole volume by that bar's own direction (close > open
+// is buying), sum inside the chart bar, and accumulate. That is a direction-weighted volume sum, NOT order flow, and it will disagree with a
+// real tick-delta feed. It is worth testing anyway because a TradingView user trading this signal
+// would be trading exactly this proxy -- the script and the research measure the same object. The
+// research used 1-minute, so leave the lower timeframe on "1" to reproduce the numbers above.
+//
+// ================================= AND THE KAMA EARNS NOTHING =================================
+// Every KAMA reading, both timeframes, four lengths, two modes -- research and then locked:
+//
+//   close > KAMA20 60m           +0.1372 p 0.000  ->  +0.0695 p 1.000
+//   close >= +1.5ATR KAMA20 60m  +0.1611 p 0.003  ->  +0.1137 p 0.801
+//   close >= +1.5ATR KAMA20 240m +0.1577 p 0.007  ->  -0.0049 p 1.000
+//   close > KAMA10 60m           +0.1028 p 0.165  ->  +0.1357 p 0.287
+//   close > KAMA50 60m           +0.0900 p 0.691  ->  +0.1163 p 0.797
+//   close > KAMA100 60m          +0.0644 p 0.980  ->  +0.0749 p 0.994
+//   close > KAMA100 240m         +0.0595 p 0.987  ->  +0.0241 p 1.000
+//
+// NOT ONE OF THE SIXTEEN CLEARS THE LOCKED BLOCK. Three clear research at p 0.000-0.007 and then
+// read 0.801-1.000 -- research-only artifacts. The length axis is also non-monotone and flat
+// (KAMA20 best, KAMA100 worst, KAMA10 in between), which is what `STUDY_MA_LAG` predicts: KAMA's
+// average lag is 1.25 bars AT EVERY WINDOW, so its period is close to inert on a trending series.
+// There is no "best KAMA setting" to ship. It defaults to OFF.
+//
+// ==================================== THE SESSION ====================================
+//   08:00-12:00              research +0.1686 p 0.185   locked +0.2527 p 0.029
+//   08:00-12:00 + FLATTEN    research -0.0058 p 0.632   locked +0.2130 p 0.000
+//   09:30-16:00              research +0.1161 p 0.566   locked +0.1144 p 0.702
+//   09:30-16:00 + FLATTEN    research +0.0662 p 0.301   locked +0.0339 p 0.929
+// Both 08:00-12:00 rows pass LOCKED while FAILING research, which is the wrong shape and is treated
+// as a defect here, not a result -- it has now happened six times on this branch. The flatten also
+// turns the research block NEGATIVE (+0.1686 -> -0.0058). Session and flatten both default to OFF.
+//
+// ================================== NO LOOKAHEAD, TWICE OVER ==================================
+// A pivot at bar i needs bars i-k..i+k, so it is knowable only at i+k. Both the research and this
+// script stamp the divergence at the CONFIRMATION bar, never at the pivot. `STUDY_DIVERGENCE_CONFIRM`
+// caught precisely this leak once: a feature that filled forward to the next pivot's confirmation
+// read +999 truncated against +37 full.
+// The KAMA is pulled with `lookahead_off` AND `[1]`, so a bar can only ever see a CLOSED
+// higher-timeframe bar. Without both it repaints and the Strategy Tester reports a fiction.
+//
+// The CVD value compared at each price pivot is the CVD AT THAT PRICE PIVOT'S OWN BAR -- not a pivot
+// of the CVD series. That is what the specification asks for: the two points must correspond to the
+// same timestamps.
+//
+// ATR is `ta.atr(14)`, Wilder's RMA. Entries and every `var` write require `barstate.isconfirmed`.
+// The working stop is capped at the PRIOR BAR'S CLOSE -- a Donchian exit channel can sit above the
+// fill and a sell stop resting above the market is not a stop.
+// COSTS ARE NOT SET IN THIS SCRIPT. The research charged 0.72 points round turn plus 0.25 per fill
+// on MNQ. Set commission and slippage in Properties before reading any number.
+// See docs/ib/STUDY_V54_CVD_KAMA.md.
+// ================================================================================================
+
+//@version=5
+strategy("V54 KAMA(HTF) + CVD structure", overlay = true,
+     default_qty_type = strategy.fixed, default_qty_value = 1, initial_capital = 100000,
+     calc_on_every_tick = false, process_orders_on_close = false, pyramiding = 0)
+
+gG = "Geometry"
+gK = "KAMA on an independent timeframe"
+gC = "CVD structure (order-flow confirmation)"
+gS = "Session"
+
+entN    = input.int(20, "Entry channel (bars)", minval = 2, group = gG)
+exitN   = input.int(20, "Exit channel (bars)", minval = 2, group = gG)
+stopN   = input.float(2.0, "Stop (ATR)", minval = 0.1, step = 0.1, group = gG)
+maxHold = input.int(480, "Max hold (bars)", minval = 1, group = gG)
+
+kaMode = input.string("off", "KAMA condition", group = gK,
+     options = ["off", "close above KAMA", "close >= 1.5 ATR above KAMA"])
+kaTF   = input.string("60", "KAMA timeframe", options = ["60", "240"], group = gK,
+     tooltip = "Independent of the chart. Sampled with lookahead_off, so a bar reads only a CLOSED higher-timeframe bar.")
+kaLen  = input.int(20, "KAMA length", minval = 2, group = gK,
+     tooltip = "Measured near-inert: KAMA's average lag is 1.25 bars at every window (STUDY_MA_LAG), and the length axis is flat here.")
+kaFast = input.int(2,  "KAMA fast", minval = 1, group = gK)
+kaSlow = input.int(30, "KAMA slow", minval = 2, group = gK)
+
+cvMode = input.string("BULLISH exhausted sellers (price LL + CVD HL)", "CVD structure condition", group = gC,
+     options = ["off",
+     "BULLISH exhausted sellers (price LL + CVD HL)",
+     "BULLISH absorbed selling (price HL + CVD LL)",
+     "BEARISH exhausted buyers (price HH + CVD LH)  [warning]",
+     "BEARISH absorbed buying (price LH + CVD HH)  [warning]"])
+cvInvert = input.bool(false, "Treat the selected pattern as a VETO instead of a requirement",
+     group = gC,
+     tooltip = "A long breakout is confirmed by bullish CVD structure and warned against by bearish structure. Pick a bearish pattern and turn this on to use it as a warning filter.")
+pivK   = input.int(3, "Pivot bars either side", minval = 1, group = gC,
+     tooltip = "A pivot at bar i needs i-k..i+k, so it is only knowable at i+k. This script stamps the divergence at the CONFIRMATION bar -- it does not repaint.")
+cvWin  = input.int(20, "Pattern counts if it fired within N bars", minval = 1, group = gC)
+cvLTF  = input.string("1", "Volume-delta lower timeframe", group = gC,
+     options = ["1S", "5S", "10S", "30S", "1", "5"],
+     tooltip = "Each lower-timeframe bar's whole volume is signed by its own direction and accumulated. The research used 1-minute, so '1' reproduces the numbers in the header. Lower timeframes carry only a bounded history on TradingView.")
+
+sessOn = input.bool(false, "Restrict entries to a window", group = gS)
+startH = input.int(9,  "Start hour (New York)",  minval = 0, maxval = 23, group = gS)
+startM = input.int(30, "Start minute", minval = 0, maxval = 59, group = gS)
+stopH  = input.int(16, "Stop hour (New York)",   minval = 0, maxval = 23, group = gS)
+stopM  = input.int(0,  "Stop minute", minval = 0, maxval = 59, group = gS)
+flatOn = input.bool(false, "Flatten at the stop time", group = gS)
+
+// ------------------------------------------------------------------------------------------------
+// KAMA on the independent timeframe. Computed INSIDE the request so the higher-timeframe series is
+// the one being smoothed, and pulled with lookahead_off + [1] so a bar can only ever see a CLOSED
+// higher-timeframe bar. Without both, this repaints and the Strategy Tester reports a fiction.
+// ------------------------------------------------------------------------------------------------
+kamaOf(len, fast, slow) =>
+    ch = math.abs(close - close[len])
+    vol = math.sum(math.abs(close - close[1]), len)
+    er = vol > 0 ? ch / vol : 0.0
+    sc = math.pow(er * (2.0 / (fast + 1) - 2.0 / (slow + 1)) + 2.0 / (slow + 1), 2)
+    var float k = na
+    k := na(k) ? close : k + sc * (close - k)
+    k
+
+kamaHTF = request.security(syminfo.tickerid, kaTF, kamaOf(kaLen, kaFast, kaSlow)[1],
+     lookahead = barmerge.lookahead_off)
+
+// ------------------------------------------------------------------------------------------------
+// CVD, computed here rather than called from a built-in, so the rule is provably the researched one.
+// THIS IS NOT TRUE AGGRESSOR DELTA. It is TradingView's approximation of it, and the research used
+// the identical rule on 1-minute bars so the two measure the same object.
+// ------------------------------------------------------------------------------------------------
+// The delta is computed HERE rather than through `ta.requestVolumeDelta`, so that the rule in this
+// script is provably the same one the research measured: sign each lower-timeframe bar's whole
+// volume by that bar's own direction, sum within the chart bar, accumulate.
+ltfDelta() =>
+    close > open ? volume : close < open ? -volume : 0.0
+
+dArr = request.security_lower_tf(syminfo.tickerid, cvLTF, ltfDelta())
+barDelta = array.size(dArr) > 0 ? array.sum(dArr) : 0.0
+var float cvd = 0.0
+if barstate.isconfirmed
+    cvd := cvd + barDelta
+
+// Price pivots, confirmed k bars later. Pine's ta.pivotlow already returns the value only once the
+// right-hand bars exist, so reading it here is causal. The CVD value compared is the one AT THE
+// PRICE PIVOT'S OWN BAR -- k bars back -- not a pivot of the CVD series, which is what the
+// specification asks for.
+pvLow  = ta.pivotlow(low, pivK, pivK)
+pvHigh = ta.pivothigh(high, pivK, pivK)
+
+var float prevLowP = na
+var float prevLowC = na
+var float prevHighP = na
+var float prevHighC = na
+var bool exhaustedSellers = false
+var bool absorbedSelling = false
+var bool exhaustedBuyers = false
+var bool absorbedBuying = false
+
+if barstate.isconfirmed
+    exhaustedSellers := false
+    absorbedSelling := false
+    exhaustedBuyers := false
+    absorbedBuying := false
+    if not na(pvLow)
+        curP = pvLow
+        curC = cvd[pivK]
+        if not na(prevLowP)
+            exhaustedSellers := curP < prevLowP and curC > prevLowC
+            absorbedSelling := curP > prevLowP and curC < prevLowC
+        prevLowP := curP
+        prevLowC := curC
+    if not na(pvHigh)
+        curP = pvHigh
+        curC = cvd[pivK]
+        if not na(prevHighP)
+            exhaustedBuyers := curP > prevHighP and curC < prevHighC
+            absorbedBuying := curP < prevHighP and curC > prevHighC
+        prevHighP := curP
+        prevHighC := curC
+
+// `barssince` is na until an event first fires; nz() keeps that from blocking every early entry.
+// A window of N bars INCLUDES the current bar, so the test is `<= N-1`.
+sinceES = nz(ta.barssince(exhaustedSellers), 1000000)
+sinceAS = nz(ta.barssince(absorbedSelling), 1000000)
+sinceEB = nz(ta.barssince(exhaustedBuyers), 1000000)
+sinceAB = nz(ta.barssince(absorbedBuying), 1000000)
+cvHit = cvMode == "BULLISH exhausted sellers (price LL + CVD HL)" ? (sinceES <= cvWin - 1) :
+     cvMode == "BULLISH absorbed selling (price HL + CVD LL)" ? (sinceAS <= cvWin - 1) :
+     cvMode == "BEARISH exhausted buyers (price HH + CVD LH)  [warning]" ? (sinceEB <= cvWin - 1) :
+     cvMode == "BEARISH absorbed buying (price LH + CVD HH)  [warning]" ? (sinceAB <= cvWin - 1) : true
+cvOk = cvMode == "off" ? true : (cvInvert ? not cvHit : cvHit)
+
+// ------------------------------------------------------------------------------------------------
+atrN   = ta.atr(14)
+entHi  = ta.highest(high, entN)[1]
+exitLo = ta.lowest(low, exitN)[1]
+kaDist = atrN > 0 and not na(kamaHTF) ? (close - kamaHTF) / atrN : na
+kaOk = kaMode == "off" ? true :
+     kaMode == "close above KAMA" ? (kaDist > 0) : (kaDist >= 1.5)
+
+nyMin  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+sStart = startH * 60 + startM
+sStop  = stopH * 60 + stopM
+inWin = not sessOn ? true :
+     sStart <= sStop ? (nyMin >= sStart and nyMin < sStop) : (nyMin >= sStart or nyMin < sStop)
+doFlat = sessOn and flatOn and not inWin
+
+gateOk = kaOk and cvOk and inWin and atrN > 0 and not na(entHi)
+
+var float stopLvl = na
+var int   heldBars = 0
+
+if barstate.isconfirmed
+    heldBars := strategy.position_size > 0 ? heldBars + 1 : 0
+
+if barstate.isconfirmed and strategy.position_size == 0 and gateOk and high > entHi
+    stopLvl := na
+    heldBars := 0
+    strategy.entry("L", strategy.long)
+
+if barstate.isconfirmed and strategy.position_size > 0
+    if na(stopLvl)
+        stopLvl := strategy.position_avg_price - stopN * atrN
+    lvl = math.max(stopLvl, nz(exitLo, stopLvl))
+    lvl := math.min(lvl, close[1])
+    strategy.exit("x", from_entry = "L", stop = lvl)
+
+if barstate.isconfirmed and strategy.position_size > 0 and (doFlat or heldBars >= maxHold)
+    strategy.close_all(doFlat ? "flat" : "max hold")
+
+plot(kamaHTF, "KAMA (HTF)", color = color.new(color.purple, 0), linewidth = 2)
+plot(entHi, "Entry channel", color = color.new(color.teal, 50))
+plot(exitLo, "Exit channel", color = color.new(color.maroon, 50))
+plotshape(exhaustedSellers, "Exhausted sellers", shape.triangleup, location.belowbar,
+     color.new(color.lime, 0), size = size.tiny)
+plotshape(absorbedSelling, "Absorbed selling", shape.circle, location.belowbar,
+     color.new(color.green, 0), size = size.tiny)
+plotshape(exhaustedBuyers, "Exhausted buyers", shape.triangledown, location.abovebar,
+     color.new(color.red, 0), size = size.tiny)
+plotshape(absorbedBuying, "Absorbed buying", shape.circle, location.abovebar,
+     color.new(color.maroon, 0), size = size.tiny)
+
+anyOn = kaMode != "off" or cvMode != "off" or sessOn
+var table hud = table.new(position.top_right, 1, 3, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, anyOn ? "CONDITIONS ON" : "no condition -- the measured baseline",
+         text_color = color.white,
+         bgcolor = anyOn ? color.new(color.orange, 20) : color.new(color.teal, 30))
+    table.cell(hud, 0, 1, "KAMA from " + kaTF + "m, CVD from " + cvLTF,
+         text_color = color.white, bgcolor = color.new(color.gray, 40))
+    table.cell(hud, 0, 2, sessOn ? "session " + str.tostring(startH) + ":" + str.tostring(startM)
+         + "-" + str.tostring(stopH) + ":" + str.tostring(stopM) + (flatOn ? " + FLATTEN" : "")
+         : "session: all hours", text_color = color.white,
+         bgcolor = sessOn ? color.new(color.orange, 20) : color.new(color.gray, 40))

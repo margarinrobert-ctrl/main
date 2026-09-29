@@ -1,0 +1,151 @@
+GATE 1, then the feature screen: predictive power, redundancy, and stability.
+
+ORDER OF OPERATIONS. Gate 1 first, on the raw primary alone, because a feature layer cannot rescue
+a primary with no edge and the two-gate structure exists to make that impossible to smuggle in.
+Only then are features built, and they are scored in this order:
+
+  1  BASE RATES on the trigger's own bars. Four indicator families have died on this branch by being
+     the breakout restated (RSI 94.7%, Aroon 100.0%, MACD 99.8%, MFI 91.7%). Two lines, no P&L.
+  2  PREDICTIVE POWER as Spearman IC against the event's own return, each beside a SHUFFLED TWIN.
+     If the twin scores what the feature scores, the column is noise.
+  3  REDUNDANCY measured ON THE SIGNAL BARS, not on all bars -- a feature only ever acts where the
+     base fires (STUDY_V40, which found two EXACT duplicates in this branch's pool that way).
+  4  STABILITY across regimes and across years: a feature whose sign flips between halves of the
+     research block is not a feature.
+Selection is FAMILY-FIRST and then by |rho|, because five picks that all pass a correlation ceiling
+were once all volatility level.
+
+  NQ 15m, 70,685 bars. Gate k=6 w=40 bars (90 / 600 minutes), passes 19.3%
+  research/locked split at day 20241128
+
+==============================================================================================================================
+GATE 1 -- the PRIMARY alone, before a single feature is written
+==============================================================================================================================
+  Two 15-minute candidates. Whichever clears is the one a meta layer may be built on.
+
+  primary                            block        n  net %/event                   95% CI       p     PF  verdict
+  15m all hours (as shipped)         research   225      0.06967 [ +0.01409, +0.12333]   0.006  1.570  PASS
+                                     locked     125      0.10224 [ +0.03763, +0.17330]   0.005  1.869  PASS
+  15m 07:00-11:00 + flatten          research    87      0.01706 [ -0.06035, +0.09587]   0.330  1.151  INSUFFICIENT DATA
+                                     locked      45      0.07963 [ -0.00128, +0.16074]   0.027  1.859  INSUFFICIENT DATA
+
+  The all-hours primary clears on both blocks; the session+flatten one does not clear
+  research. The meta layer is therefore built on the ALL-HOURS primary -- building it on a
+  primary that fails Gate 1 is exactly the move the architecture exists to prevent.
+
+  primary events: 350  (225 research / 125 locked)
+
+==============================================================================================================================
+FEATURES -- built once, frozen on the RESEARCH block
+==============================================================================================================================
+  51 features in 7 declared families
+  fracdiff order d = 0.8 (chosen by ADF on RESEARCH only), fixed window 64 bars
+  HMM fitted on RESEARCH only; states by drift:
+    bear  mean 15m log-return x100 -0.00204   rv  0.1444   self-transition 0.9365
+    side  mean 15m log-return x100 +0.00133   rv  0.0649   self-transition 0.9669
+    bull  mean 15m log-return x100 +0.00204   rv  0.0968   self-transition 0.9545
+
+==============================================================================================================================
+LEAKAGE
+==============================================================================================================================
+  truncation audit: 0 mismatches over 1,020 comparisons on 20 probe bars
+  filtered vs SMOOTHED HMM state agreement 96.8% -- close enough to be easy to miss, which is why STUDY_V27 measured what it costs
+  events with a complete feature row: 350 (225 research)
+
+==============================================================================================================================
+1  BASE RATES on the trigger's own bars -- does the feature bind at all?
+==============================================================================================================================
+  feature                     on signals  on all bars   lift
+  struct.excess                   100.0%        50.8%   1.97
+  struct.pos_in_ch                 96.0%        50.8%   1.89
+  mom.roc5                         94.9%        50.3%   1.89
+  mom.macd_hist                    93.4%        49.8%   1.88
+  mom.rsi14                        89.7%        50.3%   1.78
+  trend.r2_50                      38.9%        50.7%   0.77
+  trend.er20                       35.1%        50.3%   0.70
+  trend.adx14                      34.3%        50.9%   0.67
+  struct.ch_width                  33.7%        50.3%   0.67
+
+  features passing >95% of signal bars (the breakout restated): 2 of 51
+  features with lift within 3% of 1.00 (inert here): 6
+
+==============================================================================================================================
+2  PREDICTIVE POWER -- Spearman IC on RESEARCH events, each beside a SHUFFLED TWIN
+==============================================================================================================================
+  n = 225 research events.  cells at p<=0.05: 9 (expected by chance 2.6)
+
+  feature                    family         IC  twin |IC| p95       p
+  mom.roc240                 mom       +0.1870         0.1080   0.000
+  struct.range_atr           struct    -0.1471         0.1103   0.000
+  trend.slope200             trend     +0.1339         0.1025   0.020
+  volu.trend20               volu      -0.1456         0.1239   0.020
+  ffd.cvd_z                  ffd       -0.1542         0.1143   0.020
+  ffd.price_z                ffd       -0.1252         0.1107   0.040
+  vol.atr_pct                vol       -0.1668         0.1570   0.040
+  trend.er60                 trend     +0.1193         0.1159   0.040
+  regime.hmm_bear            regime    -0.1448         0.1418   0.040
+  regime.chop48              regime    -0.1236         0.1316   0.060
+  regime.hmm_side            regime    +0.1406         0.1415   0.060
+  vol.rv96                   vol       -0.1223         0.1303   0.080
+
+  by family (mean |IC| against the twin's 95th percentile):
+            n  mean_absIC     twin  hits
+   family                               
+   ffd      4      0.0784   0.1233     2
+   mom      8      0.0699   0.1279     1
+   regime   8      0.0780   0.1274     1
+   struct   9      0.0633   0.1233     1
+   trend   10      0.0828   0.1258     2
+   vol      7      0.0873   0.1438     1
+   volu     5      0.1050   0.1315     1
+
+==============================================================================================================================
+3  REDUNDANCY -- correlation measured ON THE SIGNAL BARS, family-first selection
+==============================================================================================================================
+  the 8 most redundant pairs of 1275:
+    volu.vs_ma50               volu.z50                   |rho| 0.9741
+    trend.d_ema200             trend.slope200             |rho| 0.9500
+    vol.rv96                   regime.hmm_side            |rho| 0.9445
+    struct.close_pos           struct.upper_wick          |rho| 0.9301
+    trend.d_ema50              mom.rsi48                  |rho| 0.9083
+    vol.atr_ratio50            regime.tod                 |rho| 0.9014
+    trend.d_ema200             trend.align                |rho| 0.8949
+    regime.hmm_bear            regime.hmm_side            |rho| 0.8800
+
+  exact duplicates (|rho| > 0.995): 0
+
+  FAMILY-FIRST selection at |rho| <= 0.65: 10 features
+    mom.roc240                 IC +0.1870  p 0.000
+    vol.atr_pct                IC -0.1668  p 0.040
+    ffd.cvd_z                  IC -0.1542  p 0.020
+    struct.range_atr           IC -0.1471  p 0.000
+    regime.hmm_side            IC +0.1406  p 0.060
+    trend.er20                 IC +0.1239  p 0.080
+    volu.z50                   IC -0.1054  p 0.140
+    regime.chop48              IC -0.1236  p 0.060
+    trend.er60                 IC +0.1193  p 0.040
+    struct.excess              IC -0.1149  p 0.080
+  worst pairwise |rho| among the picks: 0.634
+
+==============================================================================================================================
+4  STABILITY -- does the sign hold across halves of RESEARCH, and across volatility regimes?
+==============================================================================================================================
+  sign holds across both halves of research: 31 of 51
+  sign holds across all three volatility regimes: 22 of 51
+  BOTH: 18 of 51   (chance for a null feature is about 0.5 x 0.25 = 12.5%)
+
+  of the 10 selected features, 8 are stable:
+    mom.roc240                 halves +0.3226 / +0.0646   regimes +0.051 +0.101 +0.362   STABLE
+    vol.atr_pct                halves -0.1175 / -0.1708   regimes -0.435 -0.229 -0.041   STABLE
+    ffd.cvd_z                  halves -0.0731 / -0.2284   regimes -0.328 -0.189 -0.076   STABLE
+    struct.range_atr           halves -0.1845 / -0.0812   regimes -0.299 +0.016 -0.182   unstable
+    regime.hmm_side            halves +0.0495 / +0.1709   regimes +0.375 +0.094 +0.043   STABLE
+    trend.er20                 halves +0.1453 / +0.1021   regimes +0.076 +0.089 +0.185   STABLE
+    volu.z50                   halves -0.1364 / -0.0764   regimes -0.296 +0.013 -0.058   unstable
+    regime.chop48              halves -0.1842 / -0.0489   regimes -0.159 -0.119 -0.121   STABLE
+    trend.er60                 halves +0.1058 / +0.1479   regimes +0.103 +0.063 +0.151   STABLE
+    struct.excess              halves -0.1360 / -0.0817   regimes -0.224 -0.003 -0.137   STABLE
+
+  KEPT after the stability filter: 8 of 10
+
+  runtime 45s

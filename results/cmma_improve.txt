@@ -1,0 +1,26 @@
+============================================================================================================
+CAN THE CMMA STRATEGY PERFORM BETTER -- seven pre-declared candidates, two feeds
+============================================================================================================
+
+  IN-SAMPLE, net of costs.  A candidate survives only if it beats A on BOTH feeds.
+  candidate                 NQ Sharpe  +-SE     PF   pts/d   vs AUS100L Sharpe  +-SE     PF   pts/d   vs A  survives
+  A  as briefed                 +0.76  0.70  1.230  +0.942  +0.00        +0.22  0.40  1.060  +0.199  +0.00      base
+  B  RTH start 09:30            +0.57  0.70  1.167  +0.660  -0.19        +0.00  0.40  1.000  +0.001  -0.22        no
+  C  no tanh, no EMA            +0.83  0.70  1.235  +1.686  +0.07        +0.47  0.40  1.134  +0.718  +0.25       yes
+  D  B + C                      +0.69  0.70  1.194  +1.331  -0.07        +0.27  0.40  1.075  +0.400  +0.05        no
+  E  vol-targeted               +0.86  0.72  1.246  +0.840  +0.11        +0.04  0.40  1.009  +0.026  -0.18        no
+  F  dead band                  +0.87  0.70  1.352  +1.033  +0.11        +0.24  0.40  1.080  +0.213  +0.02       yes
+  G  D + E                      +0.97  0.72  1.254  +1.450  +0.21        +0.00  0.40  1.000  +0.002  -0.22        no
+
+  survivors: ['C  no tanh, no EMA', 'F  dead band']
+  trials to date: 40 (34 from the parameter sweep + 6 candidates here)
+
+  THE HOLDOUT, read once, for A and the survivors:
+  candidate                 NQ Sharpe  +-SE     PF   pts/d    win   maxDDUS100L Sharpe  +-SE     PF   pts/d    win   maxDD
+  A  as briefed                 +0.73  1.06  1.282  +1.817  50.2%   -2.1%        +0.65  0.61  1.229  +1.154  49.0%   -6.8%
+  C  no tanh, no EMA            +1.99  1.06  1.827  +6.610  52.0%   -3.1%        +0.96  0.61  1.317  +2.641  47.4%  -10.7%
+  F  dead band                  +0.86  1.06  1.387  +2.122  29.8%   -2.0%        +0.73  0.61  1.311  +1.293  25.9%   -6.1%
+  deflated Sharpe, C  no tanh, no EMA on NQ: 0.158  (expected best of 40 random tries: 1.52)
+  deflated Sharpe, C  no tanh, no EMA on US100L: 0.156  (expected best of 40 random tries: 0.87)
+  deflated Sharpe, F  dead band on NQ: 0.173  (expected best of 40 random tries: 1.52)
+  deflated Sharpe, F  dead band on US100L: 0.056  (expected best of 40 random tries: 0.87)

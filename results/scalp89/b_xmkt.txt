@@ -1,0 +1,23 @@
+  feed     tfvariant               block          n   %/trade      PF    win       R      $ 5ct  hold trail%
+  NQ        1as configured         research    4611   -0.0317   0.368   44.6  -0.359   -267,523     4     47
+  NQ        1as configured         locked      2995   -0.0307   0.373   46.0  -0.326   -205,822     3     54
+  NQ        1trail OFF             research    4037   -0.0145   0.781   36.2  -0.183   -106,439     7      0
+  NQ        1trail OFF             locked      2534   -0.0087   0.877   37.5  -0.121    -49,685     7      0
+
+  NQ        5as configured         research    1309   -0.0392   0.393   49.9  -0.286    -92,951     2     62
+  NQ        5as configured         locked       796   -0.0372   0.445   46.5  -0.245    -67,843     1     66
+  NQ        5trail OFF             research    1178   -0.0145   0.863   38.8  -0.090    -27,612     5      0
+  NQ        5trail OFF             locked       689   -0.0032   0.972   37.7  -0.080     -7,859     5      0
+
+  NQ       15as configured         research     487   -0.0307   0.606   49.3  -0.170    -27,185     1     70
+  NQ       15as configured         locked       282   -0.0346   0.669   46.1  -0.240    -24,465     1     65
+  NQ       15trail OFF             research     457    0.0009   1.006   42.0   0.019      2,292     3      0
+  NQ       15trail OFF             locked       260   -0.0045   0.971   37.3  -0.098     -4,202     2      0
+
+  US100    15as configured         research    1188   -0.0626   0.530   46.1  -0.265    -66,102     1     59
+  US100    15as configured         locked       828   -0.0370   0.633   47.7  -0.179    -48,823     1     67
+  US100    15trail OFF             research    1141   -0.0168   0.919   38.9  -0.085    -13,335     3      0
+  US100    15trail OFF             locked       762   -0.0062   0.963   39.5  -0.037     -8,939     3      0
+
+  US100 is scored in its own points ($1/pt, 0.75/side); '$ 5ct' there is 5 x its point value, not MNQ.
+  US100's 'research'/'locked' here is the same 65/35 session split applied to its own 9 years.

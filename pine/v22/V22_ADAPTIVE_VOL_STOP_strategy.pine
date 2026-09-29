@@ -1,0 +1,263 @@
+//@version=5
+// V22 -- Donchian 30/20 long with a VOLATILITY-ADAPTIVE STOP.
+//
+// ================================ READ THIS BEFORE THE INPUTS ================================
+// THIS IS NOT A NEW SIGNAL. The trigger is the same plain Donchian 30 breakout this branch has
+// shipped and re-tested a dozen times, and it does NOT beat a random-entry control at these
+// lengths. The only thing V22 adds is WHERE THE STOP GOES, and that is the only thing it claims.
+//
+// It also is NOT a VIX strategy. A VIX file was supplied and it shares ZERO sessions with any
+// futures feed here, so it could only be studied against SPX at daily scale. There it CONFIRMED the
+// mechanism below and contributed nothing tradeable of its own. See STUDY_V22_VOLATILITY.md.
+//
+// ================================ THE MECHANISM ================================
+// An ATR stop is sized from TRAILING volatility. Volatility MEAN-REVERTS. So when realised vol sits
+// LOW in its own distribution, ATR(14) has already contracted and a fixed 2.0N stop is TOO SMALL
+// for the excursion the trade is about to make. Measured as median MAE in ATR UNITS, NQ locked block:
+//
+//   vol percentile   15m MAE p50   15m stop-out   30m MAE p50   30m stop-out
+//   0.0 - 0.2            2.09          45.6%          2.18          45.8%
+//   0.4 - 0.6            2.03          41.4%          1.61          40.0%
+//   0.8 - 1.0            1.24          31.5%          0.98          20.0%
+//
+// Monotone on four independent columns, and the HELD-OUT block reproduces the research slope almost
+// value for value. Heat is 1.8-2.2x larger in the calm bucket. The direction is the opposite of the
+// usual advice ("widen stops when volatility is high").
+//
+// ================================ WHAT IT IS WORTH, LOCKED BLOCK ================================
+//   NQ 15m   flat 2.0N   +0.0939 R   PF 1.158        adaptive   +0.1454 R   PF 1.249
+//   NQ 30m   flat 2.0N   +0.0873 R   PF 1.156        adaptive   +0.1008 R   PF 1.181
+//
+// That is a SIZING CORRECTION ON AN EXISTING RULE, worth about +0.09 and +0.03 profit factor. It is
+// not an edge and it will not rescue a trigger that has none.
+//
+// ================================ THE FOUR WAYS IT WAS ATTACKED ================================
+// Widening a stop ENLARGES the R denominator, and the widened bucket is the LOSING one -- so a
+// policy that only shrinks losses arithmetically would look like an improvement without being one.
+//   1  POINTS, where no denominator moves: locked +8.894 -> +11.058 (15m) and +11.227 -> +13.604
+//      (30m). Survives. But 30m RESEARCH points FALL (+7.101 -> +4.438) while research R rises --
+//      on that one cell the gain is partly the rescaling, and it is not explained away.
+//   2  EXIT MIX. A real widening converts stop-outs into channel exits; a rescaling leaves the mix
+//      alone. Calm bucket, 15m locked: 42.8% stopped at 2.0N -> 27.1% at 2.5N -> 14.3% at 3.0N,
+//      with points per trade rising +0.141 -> +4.464 -> +5.018. It is a mechanism.
+//   3  THE THRESHOLD was declared at 0.50, not searched. Sweeping 0.3-0.7 gives a SMOOTH plateau
+//      with no spike at 0.5, and every rung beats the flat stop out of sample. Note the two
+//      timeframes slope in OPPOSITE directions across it, so do not read a peak into any one value.
+//   4  THE NAIVE INVERSE (wide when vol is HIGH) is WORSE THAN FLAT on all six cells tested.
+//      Six sign checks, six passes. That is what says the state is the cause.
+//
+// ================================ THE THREE V20/V21 COMPONENTS ARE INPUTS, NOT DELETIONS ========
+// V20 briefed a linreg-50 confirmation and a 2R target; V21 found CHOP <= 45 was the one filter that
+// cleared a selectivity-matched control on BOTH blocks. All three are below as inputs. They default
+// OFF because they were re-tested JOINTLY with the adaptive stop and this is what came back (NQ,
+// R per trade, research | locked):
+//
+//   configuration                             15m research   15m locked   30m research   30m locked
+//   flat 2.0N, no target (the old base)            -0.0286      +0.0939        +0.0870      +0.0873
+//   ADAPTIVE, no target            (default)       +0.0082      +0.1454        +0.1093      +0.1008
+//   ADAPTIVE + CHOP <= 45                          +0.0700      +0.0820        +0.0970      +0.1007
+//   ADAPTIVE + linreg C                            -0.0028      +0.1336        +0.1036      +0.1027
+//   ADAPTIVE + CHOP + linreg (full stack)          +0.0748      +0.0752        +0.1082      +0.1105
+//   ADAPTIVE + 2R target                           -0.0146      +0.0535        +0.0130      +0.0493
+//
+// CHOP <= 45 AGAINST A SELECTIVITY-MATCHED CONTROL, on the adaptive base:
+//   15m  research +0.0460 excess p 0.037   ->   locked -0.0480 excess p 0.932  (the control WINS)
+//   30m  research -0.0210 excess p 0.740   ->   locked +0.0104 excess p 0.398
+// It passes once and inverts. And it is NOT redundant with the volatility state -- correlation is
+// only -0.230 / -0.258 and CHOP leans slightly AWAY from the calm bucket (lift 0.85x / 0.88x) --
+// so this is a filter that does not replicate here, not two filters doing one job.
+//
+// THE HONEST CAVEAT: V21's CHOP result was POOLED OVER FIVE MARKETS on the flat-stop V20 base. A
+// container recycle destroyed every feed except NQ, so the re-test above is ONE market on a
+// DIFFERENT base. That is weaker evidence than the finding it checks. CHOP is not refuted; it is
+// unconfirmed here, which is why it ships as a switch rather than being removed.
+//
+// The 2R target is the seventh independent time no-take-profit has beaten every target on this
+// branch. The linreg adds about +0.005 R, which is what V20 measured.
+//
+// ONE CELL WORTH KNOWING ABOUT: on 30m the FULL STACK is the best locked cell in the table
+// (+0.1105, PF 1.205, Sharpe 1.13). It is also the best of seven configurations on one timeframe
+// while being far worse on the other, so it is an option, not a default.
+//
+// ================================ THE ORDER MODEL, AND WHY THE STOP ANCHORS WHERE IT DOES ================
+// The research engine anchors the stop to the ENTRY BAR'S OPEN. A script cannot: at the moment the
+// exit order must be written, the fill price does not exist yet. Placing the exit a bar late leaves
+// the ENTRY BAR UNPROTECTED, which STUDY_PINE_PARITY measured at 4.4-13.0% of trades averaging -33
+// to -118 points. So this script anchors to the SIGNAL BAR'S CLOSE and places entry and exit
+// TOGETHER, which is knowable at order time and leaves no unprotected bar. Measured cost of that
+// substitution, NQ: 99.03% (15m) and 99.50% (30m) of trades exit on the IDENTICAL bar, per-trade R
+// correlation 0.9935 and 0.9998, locked PF 1.249 -> 1.241 and 1.181 -> 1.182. See v22anchor.py.
+//
+// ================================ WHAT THE PARITY HARNESS CAUGHT ================================
+// `research/v22/v22_parity.py` re-implements THIS SCRIPT'S order model in Python and diffs it
+// against the engine, because a Pine port cannot be asserted by reading it. It found a real bug in
+// the first draft of this file, which was lint-clean and read correctly: the `lastExitBar` update
+// sat BELOW the entry block, so on the bar a trade closed the entry test ran against a stale value
+// and the script could re-enter immediately -- 95 trades on 15m and 61 on 30m that the research
+// position lock forbids, and they were bad ones. Counting `strategy.closedtrades` rather than
+// watching `strategy.position_size[1]` also catches a trade that opens and stops out inside one
+// bar, where position_size reads 0 at both closes.
+//
+// After the fix, against the engine on the same bars:
+//   series        percentile rank, ATR, entry channel, exit channel -- all EXACT, 0 disagreements
+//   trades        1162 of 1163 (15m) and 664 of 665 (30m); the one missing is open at data end
+//   exit bar      100.00% identical on both timeframes
+//   correlation   0.999971 (15m) and 0.999983 (30m) on per-trade points
+// The residual +4.08 and +4.03 points per trade is exactly the round turn the engine nets and the
+// harness does not, which is the check that the fee is the ONLY thing left between them.
+//
+// ================================ SETTINGS THAT DECIDE WHETHER THE REPORT IS ABOUT THE STRATEGY ====
+// TICK ALL THREE "Script execution" / recalculate boxes OFF. If a checkbox changes the report, the
+// report is about the checkbox. Every state write below is guarded by barstate.isconfirmed.
+// SET COMMISSION AND SLIPPAGE. Research charges the real MNQ stack, $1.44 round turn plus
+// bar-dependent slippage. A Commission load of 0.00% means the fills were free and the P&L is not.
+// USE AN ACCOUNT LARGE ENOUGH. The broker emulator silently REJECTS unfundable orders.
+//
+// Research tooling for education and analysis -- not financial advice.
+
+strategy("V22 Adaptive-Volatility Donchian", overlay = true,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 100000, pyramiding = 0, calc_on_every_tick = false,
+     process_orders_on_close = false, commission_type = strategy.commission.cash_per_order,
+     commission_value = 0.72, slippage = 2)
+
+// ---------------------------------------------------------------------------- inputs
+grpS = "Signal"
+entryLen = input.int(30, "Donchian entry length", minval = 2, group = grpS)
+exitLen  = input.int(20, "Donchian exit length",  minval = 2, group = grpS)
+atrLen   = input.int(14, "ATR length",            minval = 1, group = grpS)
+
+grpV = "Adaptive stop"
+useAdaptive = input.bool(true, "Scale the stop by the volatility state", group = grpV)
+volLen    = input.int(20,  "Realised-vol window (bars)",   minval = 2,  group = grpV)
+rankLen   = input.int(250, "Percentile lookback (bars)",   minval = 20, group = grpV)
+volThresh = input.float(50.0, "Percentile split", minval = 1.0, maxval = 99.0, step = 1.0,
+     group = grpV, tooltip = "Declared at 50, not searched. The 30-70 plateau is smooth.")
+stopCalm  = input.float(2.5, "Stop x ATR when vol is CALM (at or below the split)", step = 0.1,
+     group = grpV, tooltip = "Wider, because trailing ATR has contracted and understates the heat.")
+stopFast  = input.float(1.5, "Stop x ATR when vol is FAST (above the split)", step = 0.1,
+     group = grpV)
+stopFlat  = input.float(2.0, "Stop x ATR when the adaptive stop is OFF", step = 0.1, group = grpV)
+
+grpF = "Optional filters (defaults OFF -- see the joint test in the header)"
+useChop = input.bool(false, "Require CHOP(14) at or below a ceiling", group = grpF,
+     tooltip = "V21's one surviving filter, pooled over five markets on the FLAT-stop base. On " +
+     "the adaptive base it passes its control on 15m research (p 0.037) and the control BEATS it " +
+     "on 15m locked (p 0.932). Unconfirmed here, not refuted.")
+chopLen = input.int(14, "CHOP length", minval = 2, group = grpF)
+chopMax = input.float(45.0, "CHOP ceiling", minval = 1.0, maxval = 100.0, group = grpF)
+useLinreg = input.bool(false, "Require close above the linear-regression value", group = grpF,
+     tooltip = "V20 reading C, the best of the four declared readings. Worth about +0.005 R. The " +
+     "more literal reading -- forecast above close -- is mechanically BACKWARDS on a breakout bar.")
+lrLen = input.int(50, "Linear regression length", minval = 2, group = grpF)
+tpR = input.float(0.0, "Take profit in R (0 = none)", minval = 0.0, step = 0.5, group = grpF,
+     tooltip = "0 by default. No take profit has beaten every target tested on this branch seven " +
+     "independent times, and this re-test is the eighth.")
+
+grpT = "Session"
+useWindow = input.bool(false, "Restrict entries to a time window", group = grpT,
+     tooltip = "OFF by default. Every result quoted above is ALL HOURS. Seven windows were tested " +
+     "on a sibling rule and only 08:00-12:00 beat all-hours on both blocks -- which seven looks " +
+     "corrects to p 0.168, so a window is a candidate here, not a finding.")
+startH = input.int(9,  "Start hour (New York)",   minval = 0, maxval = 23, group = grpT)
+startM = input.int(30, "Start minute",            minval = 0, maxval = 59, group = grpT)
+endH   = input.int(16, "Stop hour (New York)",    minval = 0, maxval = 23, group = grpT)
+endM   = input.int(0,  "Stop minute",             minval = 0, maxval = 59, group = grpT)
+flatten = input.bool(false, "Flatten at the window end", group = grpT,
+     tooltip = "OFF by default. A fixed-time flatten cost about HALF the per-trade edge on a " +
+     "sibling rule when there was no entry window, because it truncates exactly the trades a " +
+     "channel exit exists to hold. It also fills at the NEXT bar's open, not the close.")
+
+// ---------------------------------------------------------------------------- series
+// ATR IS ta.ema(ta.tr(true), n). `ta.atr` is Wilder's RMA and is a DIFFERENT SERIES.
+atr = ta.ema(ta.tr(true), atrLen)
+
+// Realised close-to-close volatility, then its own percentile rank. `ta.percentrank(src, n)` counts
+// how many of the PREVIOUS n values are <= the current one, which is exactly the research
+// construction over a window of n+1.
+lr     = math.log(close / close[1])
+ccVol  = math.sqrt(ta.sma(lr * lr, volLen))
+volPct = ta.percentrank(ccVol, rankLen - 1)
+
+// The entry channel EXCLUDES the current bar, so a break is possible at all.
+entHi = ta.highest(high, entryLen)[1]
+// The exit channel takes NO offset: this value is read at the close of bar j-1 and the order it
+// writes is live during bar j, which is min(low) over j-exitLen .. j-1 -- the research definition.
+exLo = ta.lowest(low, exitLen)
+
+smult = not useAdaptive ? stopFlat : volPct <= volThresh ? stopCalm : stopFast
+
+// Choppiness Index, and the linear-regression value. Both are only consulted when switched on.
+chopHi  = ta.highest(high, chopLen)
+chopLo  = ta.lowest(low, chopLen)
+chopRng = chopHi - chopLo
+chopVal = chopRng > 0 ? 100.0 * math.log10(math.sum(ta.tr(true), chopLen) / chopRng)
+     / math.log10(chopLen) : na
+lrVal = ta.linreg(close, lrLen, 0)
+
+filtersOK = (not useChop or (not na(chopVal) and chopVal <= chopMax))
+     and (not useLinreg or (not na(lrVal) and close > lrVal))
+
+// ---------------------------------------------------------------------------- session
+nyH = hour(time, "America/New_York")      // bare `hour` is EXCHANGE time (Chicago for CME)
+nyM = minute(time, "America/New_York")
+mod = nyH * 60 + nyM
+startMod = startH * 60 + startM
+endMod   = endH * 60 + endM
+inWindow = not useWindow or (startMod <= endMod ? mod >= startMod and mod < endMod
+     : mod >= startMod or mod < endMod)
+atWindowEnd = useWindow and flatten and mod >= endMod
+
+// ---------------------------------------------------------------------------- state
+var float stopAnchor = na
+var float tpTarget  = na
+var int   lastExitBar = -2
+var int   nClosed = 0
+
+ready = not na(entHi) and not na(atr) and atr > 0 and not na(volPct)
+sigOK = ready and high > entHi and filtersOK
+
+// EVERY durable write is guarded. Without the guard, mid-bar evaluation reads a `close` the
+// bar-close run never sees, and `stopAnchor` is durable.
+if barstate.isconfirmed
+    // THIS BLOCK MUST COME FIRST. A signal may not fire on the bar a trade closed on -- the research
+    // position lock forbids it -- so the exit has to be recorded BEFORE the entry test runs on the
+    // same bar. Counting CLOSED TRADES rather than watching position_size[1] also catches a trade
+    // that opened and stopped out inside one bar, where position_size is 0 at both closes.
+    if strategy.closedtrades > nClosed
+        nClosed := strategy.closedtrades
+        lastExitBar := bar_index
+
+    if strategy.position_size > 0
+        if atWindowEnd
+            strategy.close_all(comment = "flat")
+        else
+            // Working stop: the NEARER of the ATR stop and the exit channel, then capped at this
+            // bar's close, because a sell stop cannot rest above the market.
+            lvl = math.min(math.max(stopAnchor, exLo), close)
+            if tpR > 0.0
+                strategy.exit("X", from_entry = "L", stop = lvl, limit = tpTarget)
+            else
+                strategy.exit("X", from_entry = "L", stop = lvl)
+    else
+        if sigOK and inWindow and bar_index > lastExitBar
+            stopAnchor := close - smult * atr
+            tpTarget   := close + tpR * smult * atr
+            strategy.entry("L", strategy.long)
+            // Placed WITH the entry so the order is live during the entry bar itself.
+            if tpR > 0.0
+                strategy.exit("X", from_entry = "L",
+                     stop = math.min(math.max(stopAnchor, exLo), close),
+                     limit = close + tpR * smult * atr)
+            else
+                strategy.exit("X", from_entry = "L",
+                     stop = math.min(math.max(stopAnchor, exLo), close))
+
+// ---------------------------------------------------------------------------- plots
+plot(entHi, "Entry channel", color.new(color.teal, 40))
+plot(strategy.position_size > 0 ? exLo : na, "Exit channel", color.new(color.orange, 30))
+plot(strategy.position_size > 0 ? stopAnchor : na, "ATR stop", color.new(color.red, 30),
+     style = plot.style_linebr)
+bgcolor(useWindow and not inWindow ? color.new(color.gray, 92) : na)
+plot(useLinreg ? lrVal : na, "Linear regression", color.new(color.purple, 40))
+plotchar(volPct, "vol percentile", "", location.top)

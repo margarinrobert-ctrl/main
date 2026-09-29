@@ -1,0 +1,6 @@
+feed,block,two_charts_n,two_charts_totR,one_chart_n,one_chart_totR,n_kept,totR_kept
+US100,research,1370,253.5,1334,238.0,0.974,0.939
+US100,LOCKED,847,17.6,828,4.7,0.978,0.266
+US30,research,1070,226.0,1058,232.0,0.989,1.027
+US30,LOCKED,628,-20.6,610,-30.3,0.971,1.472
+US30_ISO,whole,518,30.9,500,24.7,0.965,0.799

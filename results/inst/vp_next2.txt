@@ -1,0 +1,81 @@
+Tier 2 -- the pre-registered reads. Everything below the PRE-REGISTRATION block was frozen from
+Tier 0/1 on NQ RESEARCH before any of these feeds was opened, and each read is taken ONCE.
+
+PRE-REGISTRATION (2026-09-05)
+  rule      Donchian 10/10 long breakout, fill next open, entries 07:00-11:00 New York, stop 3.0 x ATR(14 Wilder)
+            (Tier 1.2: best R/trade and total/p99 inside the gate on research), target 2.3 ATR, hold 230 min, one position
+  gate      prior-session TPO single print strictly above the close's bin, 30-minute letters, bin = 0.10 x the session's
+            median ATR (Tier 1.1: scale-invariant, best marginal), ceiling 4 ATR PRIMARY (handoff 2.2), 3 ATR secondary
+  MA cells  at most three, thresholds fixed from NQ research signal-bar quantiles, each ONE read:
+            A  gate AND EMA13 < EMA48            B  gate AND (close-EMA200)/ATR <= NQ-research 2/3 quantile (not extended)
+            C  gate AND (close-VWAP07)/ATR <= NQ-research 1/3 quantile (CFD tick volume: flagged, weakest of the three)
+  reads     US100 BEFORE 2022-12-26 (primary; ~7 years the NQ selection never saw, same underlying), US100 after (feed
+            parity only, never pooled), US30 whole file (mechanism test), short mirror on NQ research (falsification)
+  nulls     same-selectivity random filter, bar-matched AND day-clustered (250 each); random ENTRY at the same rate;
+            day-block bootstrap P(mean<=0); PSR.  13 pre-registered reads in total -- stated, not corrected.
+  verdict   toward shipping: US100 pre-2022 gate PF > 1.25 with clustered p <= 0.05 and P(mean<=0) < 0.05;
+            toward abandoning: US100 pre-2022 PF < 1.10.  US30 decides regime vs mechanism.
+
+thresholds from NQ research signal bars: cell B (close-EMA200)/ATR <= 5.457;  cell C (close-VWAP07)/ATR <= 0.571
+
+==========================================================================================================================
+2.1  US100 BEFORE 2022-12-26 -- the primary read (block 0); AFTER 2022-12-26 is the feed-parity block (block 1), never pooled
+==========================================================================================================================
+  US100 15m: 206,703 bars 2016-11-14 23:30:00 -> 2025-10-01 00:00:00; pre-2022-12-26 block 141,649 bars; cost 0.75 pts rt + 0.1/side slip; median bin 1.58 pts (NQ 3.42)
+
+  -- PRE 2022-12-26 (primary) --
+  base (no gate)                                 n 2264 PF  0.970 win 49.4% %/tr -0.0049 R/tr -0.0226 tot  -11.10% DD 17.30% SRann -0.21 PSR 0.288 P(m<=0) 0.704 | (base) | entry null PF 0.962 p 0.400/0.547
+                                                 years PF: 2016:0.85 2017:0.94 2018:0.80 2019:1.26 2020:0.97 2021:1.13 2022:0.90   keep 100% of 5801 signal bars, 1371/1371 days
+  gate: single print <= 4 ATR above [PRIMARY]    n 1092 PF  0.907 win 47.1% %/tr -0.0180 R/tr -0.0490 tot  -19.69% DD 25.59% SRann -0.46 PSR 0.105 P(m<=0) 0.902 | filter null bar p 0.948/0.972 day p 0.904/0.924 (ctl PF 0.967) | entry null PF 0.922 p 0.593/0.947
+                                                 years PF: 2016:0.50 2017:0.96 2018:0.70 2019:1.29 2020:0.80 2021:0.93 2022:1.03   keep 42% of 5801 signal bars, 817/1371 days
+  gate: single print <= 3 ATR above [secondary]  n  984 PF  0.883 win 46.7% %/tr -0.0234 R/tr -0.0567 tot  -22.99% DD 27.63% SRann -0.56 PSR 0.064 P(m<=0) 0.936 | filter null bar p 0.992/0.996 day p 0.904/0.948 (ctl PF 0.970) | entry null PF 0.914 p 0.667/0.987
+                                                 years PF: 2016:0.29 2017:0.91 2018:0.70 2019:1.22 2020:0.77 2021:0.93 2022:1.00   keep 36% of 5801 signal bars, 769/1371 days
+  A: gate4 AND EMA13 < EMA48                     n  534 PF  0.924 win 48.9% %/tr -0.0159 R/tr -0.0174 tot   -8.47% DD 16.66% SRann -0.27 PSR 0.226 P(m<=0) 0.767 | filter null bar p 0.812/0.852 day p 0.716/0.796 (ctl PF 0.964) | entry null PF 0.933 p 0.553/0.847
+                                                 years PF: 2016:0.83 2017:1.16 2018:0.74 2019:1.75 2020:0.59 2021:1.00 2022:1.10   keep 19% of 5801 signal bars, 455/1371 days
+  B: gate4 AND not extended (e200 <= q2/3)       n 1003 PF  0.916 win 47.0% %/tr -0.0168 R/tr -0.0449 tot  -16.81% DD 24.39% SRann -0.40 PSR 0.139 P(m<=0) 0.848 | filter null bar p 0.900/0.940 day p 0.888/0.924 (ctl PF 0.976) | entry null PF 0.911 p 0.453/0.947
+                                                 years PF: 2016:0.63 2017:0.94 2018:0.73 2019:1.28 2020:0.79 2021:0.92 2022:1.07   keep 38% of 5801 signal bars, 750/1371 days
+  C: gate4 AND below VWAP07 (dvw <= q1/3)        n  514 PF  0.993 win 39.5% %/tr -0.0010 R/tr -0.0340 tot   -0.52% DD 10.95% SRann -0.02 PSR 0.476 P(m<=0) 0.527 | filter null bar p 0.436/0.432 day p 0.504/0.500 (ctl PF 0.994) | entry null PF 0.925 p 0.233/0.233
+                                                 years PF: 2016:0.45 2017:0.99 2018:1.00 2019:0.82 2020:0.70 2021:0.99 2022:1.35   keep 12% of 5801 signal bars, 461/1371 days
+
+  -- post 2022-12-26 (parity with NQ, same weeks) --
+  base (no gate)                                 n 1125 PF  1.122 win 49.7% %/tr +0.0169 R/tr +0.0077 tot  +19.03% DD  8.00% SRann +0.83 PSR 0.944 P(m<=0) 0.067 | (base) | entry null PF 1.106 p 0.400/0.233
+                                                 years PF: 2022:0.80 2023:1.17 2024:1.01 2025:1.22   keep 100% of 3002 signal bars, 643/643 days
+  gate: single print <= 4 ATR above [PRIMARY]    n  556 PF  1.203 win 49.1% %/tr +0.0279 R/tr +0.0224 tot  +15.52% DD  5.16% SRann +0.93 PSR 0.968 P(m<=0) 0.041 | filter null bar p 0.104/0.096 day p 0.164/0.152 (ctl PF 1.125) | entry null PF 1.127 p 0.260/0.053
+                                                 years PF: 2022:0.52 2023:1.10 2024:1.15 2025:1.46   keep 41% of 3002 signal bars, 402/643 days
+  gate: single print <= 3 ATR above [secondary]  n  480 PF  1.354 win 51.2% %/tr +0.0453 R/tr +0.0545 tot  +21.75% DD  3.63% SRann +1.44 PSR 0.999 P(m<=0) 0.001 | filter null bar p 0.004/0.004 day p 0.004/0.004 (ctl PF 1.124) | entry null PF 1.141 p 0.040/0.000
+                                                 years PF: 2022:0.52 2023:1.34 2024:1.12 2025:1.77   keep 35% of 3002 signal bars, 359/643 days
+  A: gate4 AND EMA13 < EMA48                     n  247 PF  1.337 win 51.0% %/tr +0.0462 R/tr +0.0690 tot  +11.42% DD  3.20% SRann +1.01 PSR 0.975 P(m<=0) 0.028 | filter null bar p 0.016/0.012 day p 0.104/0.072 (ctl PF 1.105) | entry null PF 1.196 p 0.213/0.047
+                                                 years PF: 2022:0.00 2023:1.30 2024:1.54 2025:1.29   keep 16% of 3002 signal bars, 202/643 days
+  B: gate4 AND not extended (e200 <= q2/3)       n  487 PF  1.202 win 49.5% %/tr +0.0292 R/tr +0.0295 tot  +14.23% DD  5.03% SRann +0.87 PSR 0.958 P(m<=0) 0.052 | filter null bar p 0.100/0.068 day p 0.212/0.152 (ctl PF 1.113) | entry null PF 1.139 p 0.307/0.120
+                                                 years PF: 2022:0.52 2023:1.12 2024:1.17 2025:1.38   keep 35% of 3002 signal bars, 354/643 days
+  C: gate4 AND below VWAP07 (dvw <= q1/3)        n  279 PF  1.013 win 40.5% %/tr +0.0014 R/tr +0.0012 tot   +0.39% DD  3.35% SRann +0.05 PSR 0.537 P(m<=0) 0.458 | filter null bar p 0.728/0.740 day p 0.768/0.776 (ctl PF 1.119) | entry null PF 1.197 p 0.880/0.880
+                                                 years PF: 2022:0.00 2023:0.89 2024:0.92 2025:1.56   keep 14% of 3002 signal bars, 240/643 days
+
+==========================================================================================================================
+2.2  US30 (Dow) -- the mechanism test; whole file as one block, then by the feed's own research / validation / test split (descriptive)
+==========================================================================================================================
+  US30 15m: 193,942 bars 2016-10-26 18:30:00 -> 2025-07-15 13:30:00; cost 1.5 pts rt + 0.1/side; median bin 3.04 pts
+  base (no gate)                                 n 3131 PF  0.973 win 48.6% %/tr -0.0032 R/tr -0.0096 tot  -10.09% DD 24.37% SRann -0.17 PSR 0.291 P(m<=0) 0.701 | (base) | entry null PF 0.999 p 0.793/0.820
+                                                 years PF: 2016:0.55 2017:1.10 2018:0.84 2019:1.14 2020:1.06 2021:1.24 2022:0.72 2023:1.17 2024:1.00 2025:0.83   keep 100% of 8007 signal bars, 1950/1950 days
+  gate: single print <= 4 ATR above [PRIMARY]    n 1555 PF  0.927 win 46.4% %/tr -0.0096 R/tr -0.0226 tot  -14.91% DD 19.07% SRann -0.32 PSR 0.143 P(m<=0) 0.848 | filter null bar p 0.896/0.916 day p 0.828/0.836 (ctl PF 0.971) | entry null PF 1.014 p 0.893/0.960
+                                                 years PF: 2016:0.65 2017:1.10 2018:0.82 2019:0.99 2020:1.00 2021:1.06 2022:0.66 2023:1.05 2024:1.05 2025:0.99   keep 44% of 8007 signal bars, 1189/1950 days
+  gate: single print <= 3 ATR above [secondary]  n 1383 PF  0.900 win 46.5% %/tr -0.0134 R/tr -0.0283 tot  -18.57% DD 22.34% SRann -0.44 PSR 0.072 P(m<=0) 0.920 | filter null bar p 0.976/0.984 day p 0.944/0.964 (ctl PF 0.974) | entry null PF 1.018 p 0.960/0.993
+                                                 years PF: 2016:0.52 2017:1.05 2018:0.77 2019:1.00 2020:0.93 2021:1.10 2022:0.61 2023:1.18 2024:0.98 2025:1.00   keep 37% of 8007 signal bars, 1110/1950 days
+  A: gate4 AND EMA13 < EMA48                     n  784 PF  0.839 win 45.0% %/tr -0.0239 R/tr -0.0396 tot  -18.71% DD 23.82% SRann -0.57 PSR 0.029 P(m<=0) 0.972 | filter null bar p 0.992/1.000 day p 0.956/0.972 (ctl PF 0.965) | entry null PF 1.006 p 0.947/1.000
+                                                 years PF: 2016:0.73 2017:1.28 2018:0.82 2019:0.94 2020:1.02 2021:1.01 2022:0.25 2023:1.04 2024:1.27 2025:1.03   keep 18% of 8007 signal bars, 662/1950 days
+  B: gate4 AND not extended (e200 <= q2/3)       n 1403 PF  0.932 win 47.1% %/tr -0.0092 R/tr -0.0100 tot  -12.95% DD 20.06% SRann -0.30 PSR 0.163 P(m<=0) 0.823 | filter null bar p 0.912/0.940 day p 0.780/0.840 (ctl PF 0.973) | entry null PF 1.018 p 0.887/0.927
+                                                 years PF: 2016:0.69 2017:1.25 2018:0.81 2019:1.07 2020:0.94 2021:1.02 2022:0.64 2023:1.09 2024:1.11 2025:1.02   keep 39% of 8007 signal bars, 1077/1950 days
+  C: gate4 AND below VWAP07 (dvw <= q1/3)        n  729 PF  0.856 win 37.6% %/tr -0.0154 R/tr -0.0518 tot  -11.23% DD 12.49% SRann -0.50 PSR 0.052 P(m<=0) 0.932 | filter null bar p 0.968/0.932 day p 0.928/0.872 (ctl PF 0.966) | entry null PF 1.003 p 0.913/0.933
+                                                 years PF: 2016:0.29 2017:1.02 2018:0.87 2019:0.68 2020:0.90 2021:0.84 2022:0.83 2023:0.78 2024:1.05 2025:0.96   keep 13% of 8007 signal bars, 655/1950 days
+  by the feed's split (descriptive): research: gate n 876 PF 0.970 / base n 1802 PF 1.043; validation: gate n 371 PF 0.788 / base n 713 PF 0.868; test: gate n 308 PF 1.021 / base n 616 PF 0.924
+
+==========================================================================================================================
+2.3  SHORT MIRROR on NQ research -- downside Donchian 10/10 breakout, prior-session single print within 4 ATR BELOW
+==========================================================================================================================
+  short base (no gate)                       research               n  707 PF  0.945 win 48.4% %/tr -0.0076 R/tr -0.0106 tot   -5.35%
+  short base (no gate)                       locked (descriptive)   n  389 PF  0.943 win 48.3% %/tr -0.0096 R/tr +0.0009 tot   -3.74%
+  short gate: single print <= 4 ATR below    research               n  370 PF  1.050 win 50.5% %/tr +0.0064 R/tr +0.0237 tot   +2.35%
+  short gate: single print <= 4 ATR below    locked (descriptive)   n  207 PF  1.136 win 52.2% %/tr +0.0193 R/tr +0.0628 tot   +4.00%
+  short gate vs same-selectivity random filter (research): keep 44%, control PF median 0.907, p 0.020
+
+  runtime 65s

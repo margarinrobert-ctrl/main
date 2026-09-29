@@ -1,0 +1,32 @@
+# Results are TRACKED, deliberately.
+#
+# Every module under research/ used to write its grids to /tmp, which does not
+# survive a container recycle. That is why the V11 stop sweep (459 cells), the
+# V21 ADX x CHOP grid (110 cells) and the V24 grid could not be audited: the
+# code and the study prose survived, the per-cell numbers did not.
+#
+# So this directory inverts the usual rule -- ignore everything, then re-admit
+# the result formats -- rather than ignoring outputs as build artefacts.
+*
+!*/
+!.gitignore
+!*.csv
+!*.json
+!*.txt
+!*.md
+
+# Parquet IS admitted: it is how a seven-figure grid becomes storable. V42's 1,131,227-cell
+# sweep is 192 MB as CSV -- past GitHub's 100 MB hard limit, and it failed the push with a 408
+# before this rule existed -- and 29 MB as zstd parquet with the same rows. This repo already
+# tracks parquet grids under research/turtle/.
+!*.parquet
+
+# Other binary intermediates stay out: caches and chunk files, not results.
+*.npy
+*.npz
+*.pkl
+
+# the two trend-day sweeps are 512 MB of intermediate cells; the analyses are committed instead
+trendday/sweep_*.csv
+trendday/dc_*.csv
+vwapdrift/grid_*.csv

@@ -1,0 +1,211 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//@version=5
+
+// VWAP-EMA XAU/USD -- THE SINGLE BEST-MEASURED CONFIGURATION, isolated.
+// One cell, no preset menu, nothing switchable that would change which strategy this is.
+// NO EDGE IS CLAIMED. The header is the measurement, including the reasons to distrust it.
+//
+// ============================ WHY THIS CELL AND NOT ANOTHER ============================
+// Ten configurations of Bhatti's rules (SSRN 6650958) have now been measured on XAU_ISO_15m --
+// 371,586 fifteen-minute bars, 2010-01-03 to 2026-01-30, gold's real cost floor (0.30 USD/oz
+// round turn + 0.05 a side), one unit, research block to 2020-05-25, locked block read ONCE per
+// candidate. This is the only one that is positive on BOTH blocks, clears a matched random entry
+// on BOTH, and DECAYS across the split, which is the shape a real edge has.
+//
+//                     research                          locked                       shape
+//   THIS CELL         +0.2035 R  PF 1.879  n 135        +0.1819 R  PF 1.670  n 79     decays  OK
+//   Optuna total R    +0.1948    PF 1.343  n 296        +0.2000    PF 1.375  n 160    grows
+//   Optuna ret/DD     +0.2489    PF 1.669  n 175        +0.1097    PF 1.252  n 95     decays
+//   As published      -0.0447    PF 0.916  n 378        +0.1423    PF 1.318  n 214    INVERTS
+//   Sweep top row     +0.4184    PF 1.879  n 103        +0.2243    PF 1.431  n 61     overfit
+//   Sweep robust      +0.1921    PF 1.356  n  92        +0.2624    PF 1.468  n 53     overfit
+//   Optuna excess     +0.1375    (n 351)                -0.2029    (n 175)            INVERTS
+//   Optuna excess_pf  +0.3170    (n 357)                -0.4585    (n 214)            INVERTS
+//   Optuna excess_R   +1.0787    (n  94)                -0.0720    (n  56)            INVERTS
+//
+// Matched control (a random entry with the identical side, stop, trail and target):
+//   this cell p 0.005 research / 0.0125 locked -- the only cell clearing at p <= 0.05 on both.
+// Walk-forward, 36-month train / 12-month test, NOTHING re-selected: 11 folds, mean IS +0.1951
+//   against mean OOS +0.2027 -- a generalization gap of -0.008, the smallest of the six presets
+//   and the only NEGATIVE one. The two sweep cells read +0.285 and +0.266 and are called overfit
+//   on that basis.
+// Return over drawdown 6.83 research / 2.15 locked; realised locked drawdown 6.67 R, the smallest
+//   of any candidate, against 17.8-17.9 R for the two most-traded ones.
+// 13 of 17 calendar years positive.
+//
+// ============================ AND HERE IS WHY IT STILL SHIPS WITH NO CLAIM ============
+// 1. IT DOES NOT SEPARATE FROM ZERO. Day-block bootstrap on the locked block (3,000 draws, whole
+//    days resampled with their trades attached): mean +0.1819 R, 95% CI [-0.054, +0.455],
+//    P(mean <= 0) = 0.072. It beats its control and it does not beat zero, and both are true --
+//    a short block can answer the first question and not the second.
+// 2. n = 79 ON THE LOCKED BLOCK. The reason this cell "holds out of sample" is partly that it
+//    barely trades: a generalization gap shrinks toward zero as its estimate gets noisier, and
+//    across the six presets corr(walk-forward folds, gap) is -0.951. Fewer folds, bigger gap.
+// 3. 43.4% OF THE LOCKED TOTAL COMES FROM 2025-26, when gold rose about 60%. That is the LEAST
+//    concentrated of the three Optuna cells (the total-R one is 94.4%) and it is not nothing.
+//    Before 2025 it is +0.1098 R per trade over 74 trades.
+// 4. IT WAS CHOSEN BY A 3,660-TRIAL SEARCH and its deflated Sharpe at that trial count is 0.000.
+//    Its median in-sample rank in its own 1,199-cell pool is 0.984 -- top of the pool, which is
+//    what "selected" looks like. The paper's own constants rank 0.443, below median, which is what
+//    "not fitted" looks like. This cell is fitted; the walk-forward says the fit held anyway.
+// 5. fANOVA puts 0.85-0.90 of every objective on the C5 VOLUME MULTIPLE, and that component's
+//    research gradient is monotone (+1.000 Spearman) and INVERTS on locked (-0.900). The knob the
+//    search cares about most is the one whose direction does not survive the split.
+// 6. ON THE SAME DAYS, entering at the session open with THIS RULE'S OWN ATR STOP beats the rule
+//    in 11 of 12 preset-blocks tested. Six conditions select days gold rose, then enter late.
+//
+// ============================ WHAT THE PAPER ACTUALLY REPORTS ============================
+// Section 6.1 states the outcome distribution was ASSUMED (full win 3R 0.30 / partial 0.20 /
+// breakeven 0.08 / loss 0.42) and Monte Carlo sampled. Its 45.3% win rate, +0.414R expectancy,
+// PF 1.76 and Sharpe 3.99 are arithmetic from that assumption; they were never measured on gold.
+// Measured here at the published geometry: the 3R target is hit on 12.4% of trades, not 30%, and
+// 61.1% die on the trail at a mean of -0.190 R.
+//
+// ============================ HOW THIS CELL DIFFERS FROM THE PAPER ============================
+//   EMA regime      370 (paper 200)      | ATR length      25 (paper 14)
+//   EMA trail        50 (paper  50)      | Initial stop  2.4694 x ATR (paper 0.5) -- MUCH wider,
+//   EMA fast trail   45 (paper  20)      |   which is the branch's monotone-toward-wider finding
+//   C5 volume      1.7174 (paper 1.1)    |   arriving for the eighth family
+//   C6 range floor 0.6523 (paper 0.8)    | Target      4.6467 R (paper 3R)
+//   Pin-bar ratio  3.5215 (paper 2.0)    | Fast-trail switch at 0.66 R (paper 2.5 R)
+//   Session: the LITERAL 13:30-20:00 UTC window, not New York wall clock. The paper calls
+//     13:30 UTC "the New York session open", which is true only under daylight saving; in winter
+//     it is 08:30 New York. The literal reading measured better and is what this cell uses.
+//   NOTE the fast-trail switch at 0.66 R is LOAD-BEARING here. At the paper's 2.5 R it is dead
+//     code -- floating profit rarely gets there before the trail fires -- but at 0.66 R the
+//     EMA(45) trail engages on most winners, so this is a materially different exit.
+//
+// ============================ TWO THINGS TO CHECK ON YOUR OWN CHART ============================
+//   * THE SIGNAL SET IS BROKER-DEPENDENT. C5 reads YOUR feed's tick volume, and at a 1.7174
+//     multiple it is the most selective condition in the rule. One XAUUSD provider's tick count
+//     is not another's, so a different data source gives a different trade count for identical
+//     rules. That is why your Strategy Tester may not match these numbers.
+//   * CHECK corr(volume, high-low) FIRST. An MT4-style XAUUSD export supplied for this work had
+//     its sixth field reading exactly 15 on 99.62% of rows, correlation +0.005 to the bar range --
+//     it was the bar's LENGTH IN MINUTES. On such a file C5 essentially never fires and the VWAP
+//     is not volume-weighted at all. The panel prints this correlation; near 0 means no volume.
+//
+// COMMISSION AND SLIPPAGE ARE NOT SET HERE. Set them in Properties before reading any report.
+// Gold's round turn is about 17% of a 15-minute ATR, which is why the published geometry is
+// positive GROSS and negative NET. This cell's 2.47 ATR stop makes the same cost 3.5% of risk.
+
+strategy("VWAP-EMA Gold — best cell", shorttitle = "VE XAU best", overlay = true, pyramiding = 0, initial_capital = 50000, default_qty_type = strategy.fixed, default_qty_value = 1, calc_on_every_tick = false, process_orders_on_close = false)
+
+// ------------------------------------------------------------------ the configuration
+// These are the measured constants. They are exposed so you can perturb them and see the
+// neighbourhood for yourself, not because any other setting is recommended.
+gI = "The measured configuration"
+emaSlow  = input.int(370, "EMA regime  (paper 200)", minval = 5, group = gI)
+emaPull  = input.int(50, "EMA pullback / trail  (paper 50)", minval = 5, group = gI)
+emaTight = input.int(45, "EMA fast trail  (paper 20)", minval = 2, group = gI)
+atrLen   = input.int(25, "ATR length  (paper 14)", minval = 2, group = gI)
+atrStop  = input.float(2.4694, "Initial stop, x ATR beyond the signal bar  (paper 0.5)", minval = 0.05, step = 0.05, group = gI, tooltip = "Much wider than the paper's. The stop axis is monotone toward wider on every family measured on this branch, and a wide stop also drops the cost from 17% of risk to 3.5%.")
+tgtR     = input.float(4.6467, "Target in R, 0 = none  (paper 3.0)", minval = 0.0, step = 0.25, group = gI)
+volMult  = input.float(1.7174, "C5 volume multiple  (paper 1.1)", minval = 0.0, step = 0.05, group = gI, tooltip = "The most selective condition in the rule and the one the search cares about most (fANOVA 0.85-0.90). Its research gradient is monotone and INVERTS on the locked block, so treat this number as the least trustworthy of the eleven.")
+rangeM   = input.float(0.6523, "C6 range floor, x ATR  (paper 0.8)", minval = 0.0, step = 0.05, group = gI, tooltip = "Passes 92.7% of the bars that already satisfy the other five conditions, so it is nearly free of information.")
+wickBody = input.float(3.5215, "C4a pin-bar wick/body ratio  (paper 2.0)", minval = 0.5, step = 0.25, group = gI)
+ambig    = input.float(0.0023549, "Regime ambiguity band, fraction of the EMA regime", minval = 0.0, step = 0.0005, group = gI)
+tightenR = input.float(0.6582, "Switch to the fast EMA above this floating R  (paper 2.5)", minval = 0.0, step = 0.25, group = gI, tooltip = "LOAD-BEARING at 0.66 R. At the paper's 2.5 R this branch is dead code, because floating profit rarely reaches it before the trail fires.")
+sessUtc  = input.bool(true, "Literal 13:30-20:00 UTC session", group = gI, tooltip = "ON = the paper's literal '13:30 UTC' window, which is what this cell was measured on. OFF = New York wall clock 09:30-16:00, which the paper probably meant and which measured worse.")
+
+gR = "Yours"
+flatEOD = input.bool(false, "Flatten at the session close", group = gR, tooltip = "Measured cost on the published geometry: -0.045 -> -0.101 R. The fifteenth confirmation on this branch that a hard flatten is destructive on a trend exit. Default OFF.")
+showLv  = input.bool(true,  "Plot the VWAP and EMAs", group = gR)
+
+// ------------------------------------------------------------------ clock
+TZ = "America/New_York"
+nyMin  = hour(time, TZ) * 60 + minute(time, TZ)
+utcMin = hour(time, "UTC") * 60 + minute(time, "UTC")
+nyDow  = dayofweek(time, TZ)
+wkday  = nyDow != dayofweek.saturday and nyDow != dayofweek.sunday
+inRth  = sessUtc ? (wkday and utcMin >= 810 and utcMin < 1200) : (wkday and nyMin >= 570 and nyMin < 960)
+newSess = inRth and not inRth[1]
+tfMin   = timeframe.in_seconds() / 60
+lastBar = inRth and not (nyMin + tfMin < (sessUtc ? 1200 : 960))
+
+// ------------------------------------------------------------------ indicators
+// ta.atr is Wilder's; the research uses ema(tr, n). This matches the research.
+atr  = ta.ema(ta.tr(true), atrLen)
+e200 = ta.ema(close, emaSlow)
+e50  = ta.ema(close, emaPull)
+e20  = ta.ema(close, emaTight)
+
+var float cumPV = 0.0
+var float cumV  = 0.0
+if barstate.isconfirmed
+    if newSess
+        cumPV := 0.0
+        cumV  := 0.0
+    if inRth
+        cumPV := cumPV + ((high + low + close) / 3.0) * volume
+        cumV  := cumV + volume
+vwap = cumV > 0 ? cumPV / cumV : na
+
+// ------------------------------------------------------------------ the six conditions, long only
+// The short mirror is negative on both blocks (-0.1421 research / -0.2147 locked) and is not
+// offered here; this file is one cell, and adding a switch that loses money is not a kindness.
+body = math.abs(close - open)
+lw   = math.min(open, close) - low
+uw   = high - math.max(open, close)
+vsma = ta.sma(volume, 20)
+ambiguous = math.abs(close - e200) / math.max(e200, 1e-9) < ambig
+
+C1 = close > e200
+C2 = not na(vwap) and close > vwap
+C3 = math.min(low, low[1]) <= e50 and e50 <= close
+C4 = (lw >= wickBody * body and uw <= 0.5 * lw) or (close > open[1] and open < close[1])
+C5 = volume > volMult * vsma
+C6 = (high - low) >= rangeM * atr
+
+longSig = inRth and C1 and C2 and C3 and C4 and C5 and C6 and not ambiguous
+
+// ------------------------------------------------------------------ orders
+// The exit-bar marker updates BEFORE the entry test so a trade cannot re-enter on the bar it
+// closed on. The bracket is fill-relative and goes out WITH the entry, so the initial stop is
+// live on the fill bar -- the phase where an unprotected entry bar costs 4.4-13.0% of trades.
+var int lastExitBar = -1
+var int nClosed = 0
+var float riskPts = na
+if strategy.closedtrades != nClosed
+    nClosed := strategy.closedtrades
+    lastExitBar := bar_index
+
+canEnter = barstate.isconfirmed and strategy.position_size == 0 and bar_index != lastExitBar and not na(atr) and atr > 0
+
+if canEnter and longSig
+    riskPts := close - (low - atrStop * atr)
+    ticks = math.round(math.max(riskPts, syminfo.mintick) / syminfo.mintick)
+    strategy.entry("L", strategy.long)
+    strategy.exit("Lx", from_entry = "L", loss = ticks, profit = tgtR > 0 ? math.round(tgtR * ticks) : na)
+
+// The trail is CLOSE-ONLY and cannot act on the bar the position filled. A script exits at the
+// NEXT bar's open where the research exits at the breaching close; measured, that moves the exit
+// bar on 63% of trades and the result by about 1% of R, because the trail fires on a close that
+// has already breached. Parity against the engine: counts 0.998-1.000, R correlation 0.978.
+floatR = strategy.position_size > 0 and riskPts > 0 ? (close - strategy.position_avg_price) / riskPts : 0.0
+trailLv = floatR >= tightenR ? e20 : e50
+if barstate.isconfirmed and strategy.position_size > 0 and bar_index > lastExitBar and close < trailLv
+    strategy.close("L", comment = "trail")
+
+if barstate.isconfirmed and flatEOD and lastBar and strategy.position_size != 0
+    strategy.close_all(comment = "session flat")
+
+// ------------------------------------------------------------------ plots
+plot(showLv and inRth ? vwap : na, "session VWAP", color = color.new(#2a78d6, 0), linewidth = 2, style = plot.style_linebr)
+plot(showLv ? e200 : na, "EMA regime", color = color.new(#8b929c, 30))
+plot(showLv ? e50 : na, "EMA trail", color = color.new(#eb6834, 0), linewidth = 2)
+plot(showLv ? e20 : na, "EMA fast trail", color = color.new(#1baf7a, 45))
+bgcolor(inRth ? color.new(#2a78d6, 94) : na)
+
+var table hud = table.new(position.top_right, 2, 5, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, "cell", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 0, "Optuna PF — best measured", text_size = size.tiny)
+    table.cell(hud, 0, 1, "research / locked", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 1, "PF 1.879 (n135)  ->  1.670 (n79)", text_size = size.tiny)
+    table.cell(hud, 0, 2, "matched control", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 2, "p 0.005 / 0.0125 — clears both", text_size = size.tiny)
+    table.cell(hud, 0, 3, "locked bootstrap P(mean<=0)", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 3, "0.072 — beats its control, not zero", text_color = color.new(#eb6834, 0), text_size = size.tiny)
+    table.cell(hud, 0, 4, "corr(volume, bar range)", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 4, str.tostring(ta.correlation(volume, high - low, 500), "#.###") + "  (near 0 = not volume)", text_size = size.tiny)

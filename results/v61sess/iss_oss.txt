@@ -1,0 +1,95 @@
+IN-SAMPLE / OUT-OF-SAMPLE on the incumbent, as the user is running it -- and 15m against 30m.
+
+>>> THE NUMBERS HERE WILL NOT MATCH THE STRATEGY TESTER, and the reason is data, not code. This
+>>> branch's `NQ_1m.csv` covers 2022-12-26 to 2025-12-12 -- three years. A TradingView chart carries
+>>> more history, which is why the screenshot shows 187 trades where this shows far fewer. What
+>>> transfers between the two is the SHAPE: which block earns, what the flatten costs, whether 15m
+>>> beats 30m. The absolute totals do not.
+>>>
+>>> AND THE SHIPPED SCRIPT SETS NO COMMISSION AND NO SLIPPAGE. If Properties was left alone, the
+>>> +8,540 in the screenshot is a ZERO-COST number. Everything below charges 0.72 points a side plus
+>>> 0.25 of slippage, which is the real MNQ stack. Read the commission load before the P&L
+>>> (STUDY_TICK_RECALC).
+
+  NQ 1-minute source -> 30m 35,721 bars, 15m 70,685 bars
+  research/locked split at day 20241128 (first 65% of sessions)
+  the SAME minutes settings give:  30m pivot k=3 window w=20 bars   |   15m pivot k=6 window w=40 bars
+  gate passes 20.4% of 30m bars and 19.3% of 15m bars
+
+==============================================================================================================================
+1  THE USER'S CONFIGURATION vs THE SHIPPED DEFAULT, on both timeframes
+==============================================================================================================================
+  incumbent geometry (20/20, 2.0N, no target). 'user' = 07:00-11:00 New York + flatten.
+
+    tf configuration                        block        n   /yr     PF    win   $ (MNQ)   maxDD $  ret/DD   %/trade  total %
+   30m as shipped  (all hours, no flatten)  research   158    88  1.784  35.4%      7482       746   10.02   +0.1193   +18.84
+   30m as shipped  (all hours, no flatten)  locked      87    91  1.611  40.2%      5417      3127    1.73   +0.1384   +12.04
+   30m as you run it (07-11 + flatten)      research    76    44  1.323  46.1%      1270       536    2.37   +0.0440    +3.35
+   30m as you run it (07-11 + flatten)      locked      39    42  1.598  48.7%      1380       639    2.16   +0.0720    +2.81
+   15m as shipped  (all hours, no flatten)  research   225   121  1.570  32.0%      5933       798    7.44   +0.0697   +15.67
+   15m as shipped  (all hours, no flatten)  locked     125   129  1.869  39.2%      5741       697    8.23   +0.1022   +12.78
+   15m as you run it (07-11 + flatten)      research    87    47  1.151  35.6%       674       876    0.77   +0.0171    +1.48
+   15m as you run it (07-11 + flatten)      locked      45    48  1.859  46.7%      1656       388    4.26   +0.0796    +3.58
+
+==============================================================================================================================
+2  WHAT THE FLATTEN AND THE WINDOW EACH COST, separated
+==============================================================================================================================
+  Four arms so the two changes are not confounded. Same geometry, same gate.
+
+  30m
+    arm                        block        n     PF   %/trade  total %   maxDD $  ret/DD
+    all hours, no flatten      research   158  1.784   +0.1193   +18.84       746   10.02
+    all hours, no flatten      locked      87  1.611   +0.1384   +12.04      3127    1.73
+    07:00-11:00, NO flatten    research    75  1.683   +0.1046    +7.85       595    5.20
+    07:00-11:00, NO flatten    locked      39  2.853   +0.3495   +13.63      1019    5.80
+    all hours, flatten 11:00   research   108  1.348   +0.0462    +4.99       670    2.98
+    all hours, flatten 11:00   locked      51  1.170   +0.0178    +0.91      1715    0.43
+    07:00-11:00 + flatten      research    76  1.323   +0.0440    +3.35       536    2.37
+    07:00-11:00 + flatten      locked      39  1.598   +0.0720    +2.81       639    2.16
+
+  15m
+    arm                        block        n     PF   %/trade  total %   maxDD $  ret/DD
+    all hours, no flatten      research   225  1.570   +0.0697   +15.67       798    7.44
+    all hours, no flatten      locked     125  1.869   +0.1022   +12.78       697    8.23
+    07:00-11:00, NO flatten    research    87  1.679   +0.0920    +8.01       706    4.33
+    07:00-11:00, NO flatten    locked      45  1.830   +0.0942    +4.24       671    3.03
+    all hours, flatten 11:00   research   147  1.359   +0.0369    +5.42       713    3.08
+    all hours, flatten 11:00   locked      76  1.323   +0.0345    +2.62      1249    1.06
+    07:00-11:00 + flatten      research    87  1.151   +0.0171    +1.48       876    0.77
+    07:00-11:00 + flatten      locked      45  1.859   +0.0796    +3.58       388    4.26
+
+
+==============================================================================================================================
+3  IS THE 15m ADVANTAGE THE TIMEFRAME, OR THE CHANNEL'S TIME REACH?
+==============================================================================================================================
+  On 15m the incumbent's 20-bar channels are 300 minutes; on 30m they are 600. Matching the
+  channels IN MINUTES is the controlled comparison.
+
+    tf entry/exit (bars)   = minutes block        n     PF   %/trade  total %  ret/DD
+   30m 20/20                     600 research    76  1.323   +0.0440    +3.35    2.37
+   30m 20/20                     600 locked      39  1.598   +0.0720    +2.81    2.16
+   30m 10/10                     300 research    84  1.363   +0.0501    +4.21    2.04
+   30m 10/10                     300 locked      46  1.601   +0.0644    +2.96    2.38
+   30m 40/40                    1200 research    57  1.479   +0.0562    +3.20    1.96
+   30m 40/40                    1200 locked      31  1.239   +0.0312    +0.97    0.90
+   15m 20/20                     300 research    87  1.151   +0.0171    +1.48    0.77
+   15m 20/20                     300 locked      45  1.859   +0.0796    +3.58    4.26
+   15m 40/40                     600 research    79  1.156   +0.0145    +1.15    0.62
+   15m 40/40                     600 locked      38  1.997   +0.0889    +3.38    3.59
+   15m 10/10                     150 research   104  1.095   +0.0073    +0.76    0.48
+   15m 10/10                     150 locked      54  1.480   +0.0498    +2.69    1.32
+
+==============================================================================================================================
+4  ZERO-COST vs REAL COST -- because the script ships with no commission set
+==============================================================================================================================
+    tf configuration                        block        n     NET $   GROSS $   cost $  cost as % of gross
+   30m as shipped                           research   158      7482      7840      358                4.6%
+   30m as shipped                           locked      87      5417      5615      198                3.5%
+   30m as you run it                        research    76      1270      1440      170               11.8%
+   30m as you run it                        locked      39      1380      1470       90                6.1%
+   15m as shipped                           research   225      5933      6728      795               11.8%
+   15m as shipped                           locked     125      5741      6026      285                4.7%
+   15m as you run it                        research    87       674       863      189               21.9%
+   15m as you run it                        locked      45      1656      1757      101                5.7%
+
+  runtime 6s

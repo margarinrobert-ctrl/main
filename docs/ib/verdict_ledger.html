@@ -1,0 +1,310 @@
+<title>Breakout Verdict Ledger</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,500;0,600;1,400&display=swap">
+<style>
+:root{
+  --ground:#F7F6F3; --panel:#FFFFFF; --panel-2:#F1EFEA; --line:#DEDAD2;
+  --ink:#1B1F24; --ink-2:#4A525C; --muted:#7C858F;
+  --amber:#9A6B1E; --amber-soft:#F0E3C8;
+  --pass:#2C6E52; --pass-soft:#DCEBE2;
+  --fail:#9E4038; --fail-soft:#F3DFDC;
+  --null:#8A8F96; --null-soft:#E9E7E2;
+  --grid:#E6E2DA;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#101418; --panel:#171C21; --panel-2:#1E242A; --line:#2A323A;
+  --ink:#E9ECEF; --ink-2:#AEB6BF; --muted:#7E8892;
+  --amber:#D9A445; --amber-soft:#3A2E17;
+  --pass:#5FBF92; --pass-soft:#163024;
+  --fail:#E0786D; --fail-soft:#341C19;
+  --null:#79828C; --null-soft:#1E242A;
+  --grid:#242B32;
+}}
+:root[data-theme="dark"]{
+  --ground:#101418; --panel:#171C21; --panel-2:#1E242A; --line:#2A323A;
+  --ink:#E9ECEF; --ink-2:#AEB6BF; --muted:#7E8892;
+  --amber:#D9A445; --amber-soft:#3A2E17;
+  --pass:#5FBF92; --pass-soft:#163024;
+  --fail:#E0786D; --fail-soft:#341C19;
+  --null:#79828C; --null-soft:#1E242A;
+  --grid:#242B32;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);
+  font-family:"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;
+  font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto;padding:44px 22px 80px;display:flex;flex-direction:column;gap:40px}
+h1,h2,h3{font-family:"IBM Plex Serif",Georgia,serif;text-wrap:balance;margin:0;font-weight:600}
+h1{font-size:2.5rem;line-height:1.1;letter-spacing:-.015em}
+h2{font-size:1.35rem;letter-spacing:-.01em}
+h3{font-size:1rem}
+p{margin:0}
+.lede{color:var(--ink-2);max-width:66ch;font-size:1.05rem}
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:.7rem;text-transform:uppercase;
+  letter-spacing:.13em;color:var(--muted);font-weight:500}
+.mono{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+header{border-bottom:1px solid var(--line);padding-bottom:28px;display:flex;flex-direction:column;gap:12px}
+section{display:flex;flex-direction:column;gap:16px}
+.note{color:var(--ink-2);max-width:70ch}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:20px 22px;
+  display:flex;flex-direction:column;gap:14px}
+
+/* shipped config */
+.ship{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--amber);
+  border-radius:3px;padding:22px 24px;display:flex;flex-direction:column;gap:18px}
+.rule{font-family:"IBM Plex Mono",monospace;font-size:.9rem;line-height:1.8;color:var(--ink)}
+.rule b{color:var(--amber);font-weight:600}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:2px;
+  background:var(--line);border:1px solid var(--line)}
+.stat{background:var(--panel);padding:12px 14px;display:flex;flex-direction:column;gap:3px}
+.stat .k{font-family:"IBM Plex Mono",monospace;font-size:.66rem;text-transform:uppercase;
+  letter-spacing:.1em;color:var(--muted)}
+.stat .v{font-family:"IBM Plex Mono",monospace;font-size:1.3rem;font-weight:500;
+  font-variant-numeric:tabular-nums}
+
+/* survival strip */
+.strip{display:flex;flex-wrap:wrap;gap:3px}
+.cell{width:22px;height:22px;border-radius:2px;background:var(--null-soft);
+  border:1px solid var(--line);position:relative;cursor:default}
+.cell.pass{background:var(--pass);border-color:var(--pass)}
+.cell.partial{background:var(--amber);border-color:var(--amber)}
+.cell.fail{background:var(--null-soft);border-color:var(--line)}
+.legend{display:flex;flex-wrap:wrap;gap:18px;font-size:.82rem;color:var(--ink-2);align-items:center}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:6px;
+  vertical-align:-1px;border:1px solid var(--line)}
+
+/* tables */
+.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:3px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-size:.83rem;min-width:620px}
+th{font-family:"IBM Plex Mono",monospace;font-size:.66rem;text-transform:uppercase;
+  letter-spacing:.09em;color:var(--muted);font-weight:500;text-align:right;
+  padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--panel-2)}
+th:first-child,td:first-child{text-align:left}
+th.l,td.l{text-align:left}
+td{padding:9px 12px;border-bottom:1px solid var(--grid);text-align:right;
+  font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+td.name{font-family:"IBM Plex Sans",sans-serif;white-space:normal;min-width:170px}
+tr.hi td{background:var(--amber-soft)}
+.pos{color:var(--pass)} .neg{color:var(--fail)} .dim{color:var(--muted)}
+.pill{display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:.66rem;
+  text-transform:uppercase;letter-spacing:.07em;padding:2px 7px;border-radius:2px;font-weight:500}
+.pill.pass{background:var(--pass-soft);color:var(--pass)}
+.pill.fail{background:var(--null-soft);color:var(--null)}
+.pill.part{background:var(--amber-soft);color:var(--amber)}
+
+/* bar */
+.barrow{display:grid;grid-template-columns:150px 1fr 62px;gap:12px;align-items:center;font-size:.83rem}
+.bartrack{height:16px;background:var(--panel-2);border:1px solid var(--line);position:relative;border-radius:2px}
+.barmid{position:absolute;left:50%;top:-3px;bottom:-3px;width:1px;background:var(--muted);opacity:.5}
+.barfill{position:absolute;top:0;bottom:0;border-radius:1px}
+.barval{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;text-align:right}
+.callout{border-left:2px solid var(--fail);padding:2px 0 2px 16px;color:var(--ink-2);max-width:70ch}
+.callout b{color:var(--ink)}
+footer{border-top:1px solid var(--line);padding-top:20px;color:var(--muted);font-size:.8rem;
+  display:flex;flex-direction:column;gap:6px}
+@media(max-width:640px){h1{font-size:1.9rem}.barrow{grid-template-columns:104px 1fr 54px}}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">NQ &amp; US30 · 30-minute · research / locked split</div>
+  <h1>Breakout Verdict Ledger</h1>
+  <p class="lede">Every idea tested against the Donchian 30/20 breakout, and what survived a
+  same-selectivity control on held-out data. Most of it did not — that is the finding, not a
+  failure of the search.</p>
+</header>
+
+<section>
+  <div class="eyebrow">What ships</div>
+  <div class="ship">
+    <div class="rule">
+      Donchian <b>30</b> entry · <b>20</b>-bar channel exit · stop <b>2.0 × ATR(14)</b><br>
+      <b>no take profit</b> · one unit · long · market order at the next open<br>
+      regime gate <b>CHOP(14) ≤ 40</b> · all hours · 30-minute bars
+    </div>
+    <div class="stats">
+      <div class="stat"><span class="k">Locked PF</span><span class="v">1.318</span></div>
+      <div class="stat"><span class="k">R / trade</span><span class="v">+0.154</span></div>
+      <div class="stat"><span class="k">Sharpe</span><span class="v">0.98</span></div>
+      <div class="stat"><span class="k">Max DD</span><span class="v">11.6 R</span></div>
+      <div class="stat"><span class="k">Return / DD</span><span class="v">1.67</span></div>
+      <div class="stat"><span class="k">Trades</span><span class="v">125</span></div>
+    </div>
+    <p class="note" style="font-size:.85rem">Every number is the <b>locked</b> block — the last 35% of
+    sessions, read once. Costs are the real MNQ stack: $1.44 round turn plus bar-dependent slippage.</p>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">Survival</div>
+  <h2>Sixteen families tested. One filter stands.</h2>
+  <div class="strip" id="strip"></div>
+  <div class="legend">
+    <span><i style="background:var(--pass);border-color:var(--pass)"></i>cleared its control on both blocks</span>
+    <span><i style="background:var(--amber);border-color:var(--amber)"></i>one market or one block only</span>
+    <span><i style="background:var(--null-soft)"></i>null, or worse than doing nothing</span>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">The ledger</div>
+  <h2>What each idea was worth</h2>
+  <div class="scroll"><table>
+    <thead><tr><th class="l">Idea</th><th class="l">Tested</th><th>Scale</th><th>Result</th><th class="l">Verdict</th></tr></thead>
+    <tbody id="ledger"></tbody>
+  </table></div>
+</section>
+
+<section>
+  <div class="eyebrow">Machine learning</div>
+  <h2>Capacity is monotonically harmful</h2>
+  <p class="note">141 causal features at each breakout, labelled with the R the trade actually
+  earned. Purged and embargoed walk-forward — overlapping trades make a naive K-fold train on the
+  answer. Out-of-fold AUC, higher is better.</p>
+  <div class="panel" id="ladder"></div>
+  <div class="callout"><b>The shuffled twin earned its keep immediately.</b> Run the deepest network
+  on randomly permuted labels and its top-decile P&amp;L came out at <span class="mono">+0.2633 R</span> —
+  more than any model managed on real labels. That column is noise, and only the shuffled control
+  reveals it.</div>
+</section>
+
+<section>
+  <div class="eyebrow">Why a good classifier still loses</div>
+  <h2>The models buy win rate by selling the tail</h2>
+  <div class="scroll"><table>
+    <thead><tr><th class="l">Market</th><th class="l">Model</th><th>Win% all</th><th>Win% picked</th>
+    <th>R all</th><th>R picked</th><th>p90 R all</th><th>p90 R picked</th></tr></thead>
+    <tbody id="mech"></tbody>
+  </table></div>
+  <div class="callout"><b>Both markets show the model doing exactly what it was trained to do</b> —
+  win rate rises from 30–33% to 36–39%. The difference is the tail. On NQ the 90th-percentile R
+  falls <span class="mono">1.740 → 1.340</span> and the strategy goes negative; on US30 the tail
+  holds <span class="mono">1.872 → 1.896</span> and the same win-rate gain drops to the bottom line.
+  Train on win/lose and you get a win-rate optimiser. A breakout system earns in the tail.</div>
+</section>
+
+<section>
+  <div class="eyebrow">Predicting chop</div>
+  <h2>Forward chop is not predictable here</h2>
+  <p class="note">Label is the forward efficiency ratio — how straight the next <span class="mono">h</span>
+  bars are. XGBoost gets 74 volatility features plus ADX. <span class="mono">naive</span> is simply
+  reading CHOP(14) today.</p>
+  <div class="scroll"><table>
+    <thead><tr><th class="l">Market</th><th>h</th><th>IC in-sample</th><th>IC locked</th>
+    <th>IC naive</th><th>AUC model</th><th>AUC naive</th></tr></thead>
+    <tbody id="chop"></tbody>
+  </table></div>
+  <div class="callout"><b>Rank correlation of 0.70 in-sample collapses to 0.014 out of sample</b>, and
+  the model never beats simply reading CHOP today. Every locked AUC sits between 0.49 and 0.52 —
+  chance. CHOP describes the last 14 bars; nothing here forecasts the next 24.</div>
+</section>
+
+<section>
+  <div class="eyebrow">Volatility as a gate</div>
+  <h2>240 ATR regime cells, two survivors</h2>
+  <p class="note">Four families — ATR percentile, ATR expansion, ATR against its own average, ATR as
+  a fraction of price — every parameter in a declared grid, each against a random filter of the same
+  selectivity. Share of cells clearing that control at p ≤ 0.05, where chance is 5%.</p>
+  <div class="panel" id="atr"></div>
+  <div class="scroll" style="margin-top:4px"><table>
+    <thead><tr><th class="l">Market</th><th class="l">Filter</th><th>Research R</th><th>Research p</th>
+    <th>Locked n</th><th>Locked R</th><th>Locked PF</th><th>Locked p</th></tr></thead>
+    <tbody id="atrtop"></tbody>
+  </table></div>
+  <div class="callout"><b>Both survivors are the same condition</b> — trade only when ATR sits in the
+  bottom fifth of its own last 500 bars. It clears on both blocks on US30 and does nothing on NQ,
+  where only 4% of 120 cells beat their control against a 5% chance rate. Two survivors out of 240
+  tested is roughly what chance delivers at p ≤ 0.05; the pair is worth watching, not trading.</div>
+</section>
+
+<footer>
+  <div>Research tooling for education and analysis — not financial advice.</div>
+  <div>Locked-block figures are read once. Costs: MNQ $1.44 round turn plus bar-dependent slippage.
+  NQ 2022-12 → 2025-12, US30 2016-10 → 2025-07.</div>
+</footer>
+</div>
+
+<script>
+const LEDGER=[
+ ["CHOP ≤ 45 regime gate","1,184 cells × 2 tf","locked p 0.048","pass","+0.16 PF over no filter"],
+ ["ATR percentile ≤ 0.2 (500)","240 cells × 2 markets","locked p 0.003","part","US30 only; null on NQ"],
+ ["Volatility-adaptive stop","5 policies × 2 tf","locked PF 1.249","part","better locked, worse research"],
+ ["ADX floor","10 rungs","locked p 0.372","fail","lift 1.11× — barely discriminates"],
+ ["Momentum filters","1,184 cells","44% beat baseline","fail","chance is 50%"],
+ ["MA crossovers","1,016 cells","45% beat baseline","fail","chance is 50%"],
+ ["Linear-regression cross","484 cells","41% PF / 34% Sharpe","fail","chance is 50%"],
+ ["HMM regime gate","3 states × 2 markets","locked p 0.95–1.00","fail","worse than no filter everywhere"],
+ ["XGBoost / LightGBM / RF","9 models × 2 markets","NQ p 0.76–0.88","fail","US30 passes, NQ fails"],
+ ["Deep MLP (6×256)","3 depths","locked AUC 0.506","fail","chance; shuffled twin scored higher"],
+ ["Forward-chop prediction","6 horizon × market","locked IC 0.014","fail","0.70 in-sample"],
+ ["Take profit (any R)","plateau 0.5–5R","0 of 1,027 reached 5R","fail","no target wins, 8th time"],
+ ["07:00–11:00 window","7 windows","worse on every row","fail","09:30 open is the better start"],
+ ["Fixed-time flatten","3 times","−0.055 R","fail","truncates what the exit holds"],
+ ["Cross-index rel. strength","untested","—","fail","needs 2 feeds; wired but unmeasured"],
+ ["VIX / implied vol","117 tests","research↔locked −0.638","fail","systematic sign inversion"]];
+const strip=document.getElementById("strip"),led=document.getElementById("ledger");
+LEDGER.forEach(r=>{
+  const c=document.createElement("div");
+  c.className="cell "+(r[3]==="pass"?"pass":r[3]==="part"?"partial":"fail");
+  c.title=r[0]+" — "+r[2];strip.appendChild(c);
+  const P={pass:["pass","cleared"],part:["part","partial"],fail:["fail","null"]}[r[3]];
+  led.insertAdjacentHTML("beforeend",
+   `<tr class="${r[3]==='pass'?'hi':''}"><td class="name">${r[0]}</td><td class="l dim">${r[1]}</td>
+    <td>${r[2]}</td><td class="l dim" style="font-family:'IBM Plex Sans',sans-serif;white-space:normal">${r[4]}</td>
+    <td class="l"><span class="pill ${P[0]}">${P[1]}</span></td></tr>`);});
+
+const LAD=[["logistic regression",.5585],["random forest 300",.5732],["LightGBM 400",.5438],
+ ["XGBoost 300 d3",.5603],["XGBoost 600 d6",.5347],["XGBoost 1200 d10",.5233],
+ ["MLP 2×64",.5394],["MLP 4×128",.5132],["MLP 6×256",.5060]];
+document.getElementById("ladder").innerHTML=LAD.map(([n,v])=>{
+  const w=Math.min(100,Math.max(0,(v-.50)/.09*100));
+  const col=v>=.56?"var(--pass)":v>=.53?"var(--amber)":"var(--null)";
+  return `<div class="barrow"><span>${n}</span>
+   <div class="bartrack"><div class="barfill" style="left:0;width:${w}%;background:${col}"></div></div>
+   <span class="barval">${v.toFixed(4)}</span></div>`}).join("")+
+ `<div class="barrow" style="color:var(--muted);font-size:.76rem"><span>chance</span>
+  <div class="bartrack" style="background:transparent;border-color:transparent"></div>
+  <span class="barval">0.5000</span></div>`;
+
+const MECH=[["NQ","random forest 300","32.7%","38.9%","+0.0304","−0.0090","+1.740","+1.340",0],
+ ["NQ","XGBoost 300 d3","32.7%","36.4%","+0.0304","−0.0028","+1.740","+1.469",0],
+ ["US30","random forest 300","30.7%","38.7%","−0.0090","+0.1086","+1.872","+1.896",1],
+ ["US30","XGBoost 300 d3","30.7%","36.7%","−0.0090","+0.0926","+1.872","+1.882",1]];
+document.getElementById("mech").innerHTML=MECH.map(r=>
+ `<tr><td class="l">${r[0]}</td><td class="l" style="font-family:'IBM Plex Sans',sans-serif">${r[1]}</td>
+  <td class="dim">${r[2]}</td><td>${r[3]}</td><td class="dim">${r[4]}</td>
+  <td class="${r[8]?'pos':'neg'}">${r[5]}</td><td class="dim">${r[6]}</td>
+  <td class="${r[8]?'pos':'neg'}">${r[7]}</td></tr>`).join("");
+
+const CHOP=[["NQ",12,"+0.5738","−0.0166","−0.0128",".4940",".4898"],
+ ["NQ",24,"+0.6330","+0.0402","+0.0315",".5215",".5214"],
+ ["NQ",48,"+0.6999","+0.0144","+0.0060",".5012",".4992"],
+ ["US30",12,"+0.4093","+0.0052","+0.0070",".4986",".5039"],
+ ["US30",24,"+0.4753","−0.0111","+0.0163",".4920",".5096"],
+ ["US30",48,"+0.5181","+0.0200","−0.0051",".5119",".4975"]];
+document.getElementById("chop").innerHTML=CHOP.map(r=>
+ `<tr><td class="l">${r[0]}</td><td>${r[1]}</td><td class="pos">${r[2]}</td>
+  <td class="dim">${r[3]}</td><td class="dim">${r[4]}</td><td class="dim">${r[5]}</td>
+  <td class="dim">${r[6]}</td></tr>`).join("");
+
+const ATR=[["NQ research",.04],["NQ locked",.04],["US30 research",.25],["US30 locked",.15]];
+document.getElementById("atr").innerHTML=ATR.map(([n,v])=>{
+  const w=Math.min(100,v/.30*100),col=v>.10?"var(--amber)":"var(--null)";
+  return `<div class="barrow"><span>${n}</span>
+   <div class="bartrack"><div class="barfill" style="left:0;width:${w}%;background:${col}"></div>
+   <div class="barmid" style="left:${5/30*100}%"></div></div>
+   <span class="barval">${(v*100).toFixed(0)}%</span></div>`}).join("")+
+ `<p class="note" style="font-size:.78rem;margin-top:4px">Vertical mark is the 5% chance rate.</p>`;
+
+const AT=[["US30","ATR pct 500 ≤ 0.2","+0.3682","0.003","169","+0.1611","1.207","0.003",1],
+ ["US30","ATR/price 500 ≤ 0.2","+0.3618","0.010","174","+0.1448","1.186","0.013",1],
+ ["US30","ATR pct 250 ≤ 0.2","+0.4281","0.000","165","+0.0457","1.056","0.217",0],
+ ["US30","ATR pct 100 ≤ 0.35","+0.3731","0.000","255","−0.0295","0.963","0.700",0],
+ ["NQ","ATR pct 100 ≤ 0.2","+0.2282","0.100","89","+0.0207","1.029","0.653",0]];
+document.getElementById("atrtop").innerHTML=AT.map(r=>
+ `<tr class="${r[8]?'hi':''}"><td class="l">${r[0]}</td>
+  <td class="l" style="font-family:'IBM Plex Sans',sans-serif">${r[1]}</td>
+  <td class="dim">${r[2]}</td><td class="dim">${r[3]}</td><td class="dim">${r[4]}</td>
+  <td class="${r[8]?'pos':'dim'}">${r[5]}</td><td>${r[6]}</td>
+  <td class="${r[8]?'pos':'dim'}">${r[7]}</td></tr>`).join("");
+</script>

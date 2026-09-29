@@ -1,0 +1,11 @@
+==========================================================================================================================
+THE MATCHED CONTROL on the walk-forward out-of-sample span (2023-10-01 onward -- every quarter after the first training window)
+==========================================================================================================================
+  arm                                          n  observed %/t   total %  control med           control 5-95%       p
+  FIXED incumbent (30m)                      188        0.1512     28.43       0.0438   [  +0.0008,  +0.0872]   0.000
+  FIXED 15m preset                           460        0.0745     34.27       0.0174   [  -0.0021,  +0.0371]   0.000
+  WFO modal cell (15/15/30/2.5/0/3/40)       450        0.1112     50.06       0.0331   [  +0.0107,  +0.0604]   0.000
+
+  The control is oversampled 3x on entry bars and then thinned by the SAME position
+  lock, so it lands near the rule's own trade count rather than clustering -- the
+  construction STUDY_V59 had to fix after an unsorted control rejected nothing.

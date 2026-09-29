@@ -1,0 +1,61 @@
+TFI, second pass: the levers the library names, chosen by TWO-FEED AGREEMENT on research.
+
+Axes: the entry window (E9), the flatten (the intraday constraint the branch has measured at
+about half a trend family's edge: 16:00 flat against holding on the channel/stop), the ADX floor
+(E3) and the stop. Channel 55 / exit 20 / gate on / no target are held from the first pass.
+A cell is scored by the MINIMUM of its research R on NQ and US100 (US30 is a null on every
+cell of the first pass and is reported, not selected on). The reserved blocks are read once
+for the consensus cell and the shipped cell, and a two-market book of the two is priced on
+the overlapping out-of-sample dates.
+
+====================================================================================================
+A. GRID on research, per feed, and the two-feed minimum (NQ, US100)
+====================================================================================================
+  window:
+    09:30-11:00          two-feed min R +0.059 min PF 1.21 | NQ R +0.059 PF 1.22 | US100 R +0.220 PF 1.57 | US30 R +0.071 | n_NQ 98
+    09:30-12:00          two-feed min R +0.071 min PF 1.23 | NQ R +0.071 PF 1.24 | US100 R +0.209 PF 1.51 | US30 R +0.067 | n_NQ 110
+    09:30-14:00          two-feed min R +0.084 min PF 1.27 | NQ R +0.087 PF 1.30 | US100 R +0.214 PF 1.55 | US30 R +0.050 | n_NQ 131
+  flat:
+    flat 16:00           two-feed min R +0.089 min PF 1.25 | NQ R +0.092 PF 1.29 | US100 R +0.148 PF 1.37 | US30 R +0.006 | n_NQ 114
+    hold (no flatten)    two-feed min R +0.053 min PF 1.22 | NQ R +0.053 PF 1.22 | US100 R +0.280 PF 1.72 | US30 R +0.119 | n_NQ 112
+  adx:
+    20                   two-feed min R +0.100 min PF 1.28 | NQ R +0.103 PF 1.31 | US100 R +0.213 PF 1.55 | US30 R +0.066 | n_NQ 125
+    25                   two-feed min R +0.043 min PF 1.19 | NQ R +0.043 PF 1.20 | US100 R +0.216 PF 1.53 | US30 R +0.059 | n_NQ 101
+  stop:
+    2.0                  two-feed min R +0.080 min PF 1.23 | NQ R +0.082 PF 1.28 | US100 R +0.211 PF 1.40 | US30 R +0.048 | n_NQ 115
+    2.5                  two-feed min R +0.091 min PF 1.28 | NQ R +0.092 PF 1.30 | US100 R +0.222 PF 1.56 | US30 R +0.068 | n_NQ 112
+    3.0                  two-feed min R +0.044 min PF 1.19 | NQ R +0.044 PF 1.19 | US100 R +0.209 PF 1.67 | US30 R +0.072 | n_NQ 112
+
+  top 8 cells by two-feed min PF:
+         window              flat  adx  stop  n_NQ  win_NQ  pf_NQ  R_NQ  n_US100  win_US100  pf_US100  R_US100  pf_US30  minPF
+    09:30-11:00        flat 16:00   20 2.500   109   0.495  1.436 0.159      239      0.519     1.382    0.152    1.051  1.382
+    09:30-14:00 hold (no flatten)   20 2.500   141   0.454  1.343 0.107      335      0.493     1.775    0.305    1.082  1.343
+    09:30-14:00        flat 16:00   20 2.500   145   0.503  1.402 0.143      362      0.539     1.342    0.136    0.974  1.342
+    09:30-12:00        flat 16:00   20 2.500   120   0.492  1.399 0.150      299      0.538     1.339    0.150    0.967  1.339
+    09:30-14:00 hold (no flatten)   20 2.000   147   0.415  1.337 0.105      344      0.453     1.653    0.320    1.038  1.337
+    09:30-14:00        flat 16:00   25 2.500   117   0.530  1.335 0.095      284      0.560     1.372    0.137    1.022  1.335
+    09:30-11:00        flat 16:00   20 2.000   111   0.432  1.355 0.134      240      0.471     1.317    0.158    0.995  1.317
+    09:30-12:00 hold (no flatten)   20 2.500   120   0.458  1.309 0.108      285      0.488     1.634    0.261    1.135  1.309
+
+  consensus by marginal of the two-feed min R: {'window': '09:30-14:00', 'flat': 'flat 16:00', 'adx': np.int64(20), 'stop': np.float64(2.5)}
+
+====================================================================================================
+B. RESERVED BLOCKS, read once: the consensus cell and the shipped cell, per market, with
+   the random-bar control; then the NQ + US100 book on the overlapping out-of-sample dates
+====================================================================================================
+
+  shipped (09:30-14:00, flat 16:00, ADX 20, stop 2.5): {'window': '09:30-14:00', 'flat': 'flat 16:00', 'adx': 20, 'stop': 2.5}
+  NQ locked (median hold 15 bars)          n   81 win 55.6% PF 1.238 R +0.0472 pts  +9.94 Sharpe 0.58 stop 35% chan 2% flat 63% tgt 0% | ctl +0.0170 p 0.320
+  US100 validation (median hold 16 bars)   n  125 win 57.6% PF 1.559 R +0.1876 pts +18.08 Sharpe 1.28 stop 35% chan 1% flat 64% tgt 0% | ctl +0.0463 p 0.000
+  US100 test (median hold 16 bars)         n  126 win 51.6% PF 1.202 R +0.0767 pts  +7.37 Sharpe 0.58 stop 33% chan 2% flat 64% tgt 0% | ctl -0.0068 p 0.090
+  US30 validation (median hold 15 bars)    n  134 win 49.3% PF 1.013 R +0.0127 pts  +0.86 Sharpe 0.04 stop 37% chan 1% flat 63% tgt 0% | ctl -0.0067 p 0.395
+  US30 test (median hold 14 bars)          n  108 win 42.6% PF 0.924 R -0.0336 pts  -5.56 Sharpe -0.23 stop 42% chan 0% flat 58% tgt 0% | ctl +0.0130 p 0.730
+    BOOK NQ+US100 over 2024-11-29 to 2025-09-29 (217 weekdays): daily-R PF 1.177 (NQ alone 1.264, US100 alone 1.084); Sharpe 0.58 (NQ 0.84, US100 0.28); daily corr 0.90; trade-level PF NQ 1.125 US100 1.198
+
+  CONSENSUS: {'window': '09:30-14:00', 'flat': 'flat 16:00', 'adx': np.int64(20), 'stop': np.float64(2.5)}
+  NQ locked (median hold 15 bars)          n   81 win 55.6% PF 1.238 R +0.0472 pts  +9.94 Sharpe 0.58 stop 35% chan 2% flat 63% tgt 0% | ctl +0.0170 p 0.320
+  US100 validation (median hold 16 bars)   n  125 win 57.6% PF 1.559 R +0.1876 pts +18.08 Sharpe 1.28 stop 35% chan 1% flat 64% tgt 0% | ctl +0.0463 p 0.000
+  US100 test (median hold 16 bars)         n  126 win 51.6% PF 1.202 R +0.0767 pts  +7.37 Sharpe 0.58 stop 33% chan 2% flat 64% tgt 0% | ctl -0.0068 p 0.090
+  US30 validation (median hold 15 bars)    n  134 win 49.3% PF 1.013 R +0.0127 pts  +0.86 Sharpe 0.04 stop 37% chan 1% flat 63% tgt 0% | ctl -0.0067 p 0.395
+  US30 test (median hold 14 bars)          n  108 win 42.6% PF 0.924 R -0.0336 pts  -5.56 Sharpe -0.23 stop 42% chan 0% flat 58% tgt 0% | ctl +0.0130 p 0.730
+    BOOK NQ+US100 over 2024-11-29 to 2025-09-29 (217 weekdays): daily-R PF 1.177 (NQ alone 1.264, US100 alone 1.084); Sharpe 0.58 (NQ 0.84, US100 0.28); daily corr 0.90; trade-level PF NQ 1.125 US100 1.198

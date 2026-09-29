@@ -1,0 +1,73 @@
+feed,block,geom,arm,ma,tol,keep,n,pct,pf,mde,added
+US30L,A_research,1.5N / none,1 no gate,--,,1.0,1734,0.0067,1.047,0.0358,0
+US30L,B_holdout,1.5N / none,1 no gate,--,,1.0,733,0.0009,1.006,0.0522,0
+US30L,A_research,1.5N / none,2 MA gate,state 13>48,,0.506,1423,0.0029,1.018,0.0426,0
+US30L,B_holdout,1.5N / none,2 MA gate,state 13>48,,0.506,587,-0.0416,0.754,0.0452,0
+US30L,A_research,1.5N / none,3 confluence only,--,0.25,0.052,138,0.1087,1.82,0.1547,0
+US30L,B_holdout,1.5N / none,3 confluence only,--,0.25,0.052,70,-0.0527,0.694,0.1146,0
+US30L,A_research,1.5N / none,4 MA or confluence,state 13>48,0.25,0.5325,1440,-0.0059,0.978,0.0384,106
+US30L,B_holdout,1.5N / none,4 MA or confluence,state 13>48,0.25,0.5325,600,-0.0441,0.743,0.0443,106
+US30L,A_research,1.5N / none,3 confluence only,--,0.5,0.1095,271,0.0328,1.231,0.0871,0
+US30L,B_holdout,1.5N / none,3 confluence only,--,0.5,0.1095,127,-0.0666,0.608,0.0794,0
+US30L,A_research,1.5N / none,4 MA or confluence,state 13>48,0.5,0.5663,1466,-0.0093,0.959,0.0378,241
+US30L,B_holdout,1.5N / none,4 MA or confluence,state 13>48,0.5,0.5663,611,-0.0476,0.723,0.0435,241
+US30L,A_research,1.5N / none,3 confluence only,--,1.0,0.214,444,-0.0088,0.955,0.0686,0
+US30L,B_holdout,1.5N / none,3 confluence only,--,1.0,0.214,215,-0.0481,0.713,0.0665,0
+US30L,A_research,1.5N / none,4 MA or confluence,state 13>48,1.0,0.6232,1494,-0.0093,0.954,0.038,469
+US30L,B_holdout,1.5N / none,4 MA or confluence,state 13>48,1.0,0.6232,632,-0.0408,0.761,0.0434,469
+US30L,A_research,1.5N / none,2 MA gate,cross<=5b,,0.114,287,0.0173,1.048,0.1243,0
+US30L,B_holdout,1.5N / none,2 MA gate,cross<=5b,,0.114,137,-0.0248,0.877,0.1162,0
+US30L,A_research,1.5N / none,4 MA or confluence,cross<=5b,0.25,0.1575,390,0.0142,1.11,0.0774,174
+US30L,B_holdout,1.5N / none,4 MA or confluence,cross<=5b,0.25,0.1575,190,-0.0337,0.825,0.0913,174
+US30L,A_research,1.5N / none,4 MA or confluence,cross<=5b,0.5,0.2072,496,-0.0026,1.004,0.0642,373
+US30L,B_holdout,1.5N / none,4 MA or confluence,cross<=5b,0.5,0.2072,232,-0.0417,0.774,0.0779,373
+US30L,A_research,1.5N / none,4 MA or confluence,cross<=5b,1.0,0.2938,621,-0.0037,0.983,0.0598,719
+US30L,B_holdout,1.5N / none,4 MA or confluence,cross<=5b,1.0,0.2938,302,-0.0383,0.786,0.0663,719
+US30L,A_research,100pt / 100pt,1 no gate,--,,1.0,1694,-0.0011,0.999,0.0225,0
+US30L,B_holdout,100pt / 100pt,1 no gate,--,,1.0,742,-0.02,0.851,0.0266,0
+US30L,A_research,100pt / 100pt,2 MA gate,state 13>48,,0.506,1419,-0.0142,0.938,0.0246,0
+US30L,B_holdout,100pt / 100pt,2 MA gate,state 13>48,,0.506,585,-0.0348,0.756,0.0299,0
+US30L,A_research,100pt / 100pt,3 confluence only,--,0.25,0.052,138,0.0261,1.218,0.0794,0
+US30L,B_holdout,100pt / 100pt,3 confluence only,--,0.25,0.052,70,-0.0315,0.776,0.0885,0
+US30L,A_research,100pt / 100pt,4 MA or confluence,state 13>48,0.25,0.5325,1435,-0.0136,0.938,0.0245,106
+US30L,B_holdout,100pt / 100pt,4 MA or confluence,state 13>48,0.25,0.5325,596,-0.0345,0.759,0.0296,106
+US30L,A_research,100pt / 100pt,3 confluence only,--,0.5,0.1095,271,0.0131,1.094,0.056,0
+US30L,B_holdout,100pt / 100pt,3 confluence only,--,0.5,0.1095,125,-0.0306,0.78,0.0653,0
+US30L,A_research,100pt / 100pt,4 MA or confluence,state 13>48,0.5,0.5663,1458,-0.0161,0.921,0.0243,241
+US30L,B_holdout,100pt / 100pt,4 MA or confluence,state 13>48,0.5,0.5663,606,-0.0342,0.76,0.0294,241
+US30L,A_research,100pt / 100pt,3 confluence only,--,1.0,0.214,440,0.0001,1.012,0.044,0
+US30L,B_holdout,100pt / 100pt,3 confluence only,--,1.0,0.214,215,-0.0283,0.796,0.0488,0
+US30L,A_research,100pt / 100pt,4 MA or confluence,state 13>48,1.0,0.6232,1478,-0.0122,0.942,0.0242,469
+US30L,B_holdout,100pt / 100pt,4 MA or confluence,state 13>48,1.0,0.6232,628,-0.0343,0.758,0.0289,469
+US30L,A_research,100pt / 100pt,2 MA gate,cross<=5b,,0.114,284,-0.02,0.902,0.0538,0
+US30L,B_holdout,100pt / 100pt,2 MA gate,cross<=5b,,0.114,135,-0.038,0.758,0.0617,0
+US30L,A_research,100pt / 100pt,4 MA or confluence,cross<=5b,0.25,0.1575,388,-0.0104,0.963,0.0467,174
+US30L,B_holdout,100pt / 100pt,4 MA or confluence,cross<=5b,0.25,0.1575,188,-0.0341,0.774,0.0528,174
+US30L,A_research,100pt / 100pt,4 MA or confluence,cross<=5b,0.5,0.2072,494,-0.0103,0.957,0.0413,373
+US30L,B_holdout,100pt / 100pt,4 MA or confluence,cross<=5b,0.5,0.2072,230,-0.0282,0.808,0.0478,373
+US30L,A_research,100pt / 100pt,4 MA or confluence,cross<=5b,1.0,0.2938,614,0.0002,1.017,0.0372,719
+US30L,B_holdout,100pt / 100pt,4 MA or confluence,cross<=5b,1.0,0.2938,300,-0.025,0.822,0.0414,719
+US30I,C_forward,1.5N / none,1 no gate,--,,1.0,315,0.008,1.037,0.0619,0
+US30I,C_forward,1.5N / none,2 MA gate,state 13>48,,0.5209,275,0.0039,1.024,0.0673,0
+US30I,C_forward,1.5N / none,3 confluence only,--,0.25,0.0649,30,-0.033,0.787,0.1579,0
+US30I,C_forward,1.5N / none,4 MA or confluence,state 13>48,0.25,0.5513,277,-0.0011,0.993,0.0668,29
+US30I,C_forward,1.5N / none,3 confluence only,--,0.5,0.1266,66,-0.0476,0.685,0.0982,0
+US30I,C_forward,1.5N / none,4 MA or confluence,state 13>48,0.5,0.5826,283,-0.0024,0.982,0.0658,59
+US30I,C_forward,1.5N / none,3 confluence only,--,1.0,0.2646,123,-0.0256,0.839,0.0953,0
+US30I,C_forward,1.5N / none,4 MA or confluence,state 13>48,1.0,0.6684,290,0.0081,1.051,0.0665,141
+US30I,C_forward,1.5N / none,2 MA gate,cross<=5b,,0.1276,57,0.0092,1.061,0.1343,0
+US30I,C_forward,1.5N / none,4 MA or confluence,cross<=5b,0.25,0.1799,78,-0.0189,0.876,0.1042,50
+US30I,C_forward,1.5N / none,4 MA or confluence,cross<=5b,0.5,0.2312,109,-0.0336,0.775,0.0831,99
+US30I,C_forward,1.5N / none,4 MA or confluence,cross<=5b,1.0,0.3483,153,-0.0202,0.871,0.0842,211
+US30I,C_forward,100pt / 100pt,1 no gate,--,,1.0,328,-0.0098,0.902,0.0316,0
+US30I,C_forward,100pt / 100pt,2 MA gate,state 13>48,,0.5209,275,-0.0047,0.954,0.0346,0
+US30I,C_forward,100pt / 100pt,3 confluence only,--,0.25,0.0649,30,0.0056,1.092,0.1086,0
+US30I,C_forward,100pt / 100pt,4 MA or confluence,state 13>48,0.25,0.5513,278,-0.0087,0.919,0.0344,29
+US30I,C_forward,100pt / 100pt,3 confluence only,--,0.5,0.1266,65,-0.0127,0.893,0.071,0
+US30I,C_forward,100pt / 100pt,4 MA or confluence,state 13>48,0.5,0.5826,285,-0.011,0.896,0.0339,59
+US30I,C_forward,100pt / 100pt,3 confluence only,--,1.0,0.2646,122,-0.0226,0.809,0.0515,0
+US30I,C_forward,100pt / 100pt,4 MA or confluence,state 13>48,1.0,0.6684,293,-0.0105,0.901,0.0334,141
+US30I,C_forward,100pt / 100pt,2 MA gate,cross<=5b,,0.1276,57,-0.003,0.971,0.076,0
+US30I,C_forward,100pt / 100pt,4 MA or confluence,cross<=5b,0.25,0.1799,78,-0.0129,0.893,0.0654,50
+US30I,C_forward,100pt / 100pt,4 MA or confluence,cross<=5b,0.5,0.2312,108,-0.0203,0.823,0.0547,99
+US30I,C_forward,100pt / 100pt,4 MA or confluence,cross<=5b,1.0,0.3483,152,-0.0289,0.755,0.0459,211

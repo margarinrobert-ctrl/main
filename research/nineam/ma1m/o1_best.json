@@ -1,0 +1,11 @@
+{
+ "best": {
+  "fast_type": "sma",
+  "slow_type": "tema",
+  "fast_len": 2,
+  "slow_len": 179,
+  "gate_mode": "state",
+  "exit": "state"
+ },
+ "value": 3.643076697260624
+}

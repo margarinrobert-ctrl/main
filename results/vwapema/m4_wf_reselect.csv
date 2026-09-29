@@ -1,0 +1,7 @@
+feed,arm,folds,sum_OOS_R,mean,pos
+US100,re-chosen,5,0.8579,0.1716,2
+US100,random cell,5,-0.3876,-0.0775,1
+US100,As published,5,0.099,0.0198,3
+US30,re-chosen,5,-0.8282,-0.1656,1
+US30,random cell,5,-0.2469,-0.0494,1
+US30,As published,5,0.2024,0.0405,3

@@ -1,0 +1,171 @@
+//@version=6
+// =============================================================================================
+// RSI14>70 AND RSI14 rising AND lower wick>50%, all session
+//   long only, stop 2.5 x ATR, target 1.0 x that risk, NO time stop, 60-minute bars.
+//   Stop and target are measured from the FILL -- the open of the bar after the signal --
+//   using the ATR of the signal bar.
+//
+// MEASURED ON MNQ, 2022-12 to 2025-12, 1 contract, under the LIVE cost model:
+//   itemised fees $1.44/round turn (broker $0.35 + CME exchange $0.35 + NFA $0.02, per side),
+//   bar-dependent slippage, plus overnight / open-close / high-volatility spread widening.
+//     trades                      102  (68 research / 34 locked)
+//     win rate                    67.6%
+//     net                         $8,197
+//     profit factor               2.07
+//     research block              $5,895   ($86.7/trade)
+//     locked block                $2,301   ($67.7/trade)
+//     vs matched control          research p 0.002, locked p 0.116
+//     chosen on                   the research block only; the locked figures were read once
+//
+// SELECTION. This came out of a 76,546 configuration search over RSI period, RSI threshold,
+//   the RSI-rising condition, the lower-wick threshold, timeframe, session window, stop, target
+//   and flatten time. At that multiplicity the Bonferroni threshold for a single claim is
+//   p < 6.5e-07, which nothing here clears -- so treat these as the best available candidates,
+//   not as proven. Ranking was by EXCESS OVER A MATCHED CONTROL, never by raw dollars: with the
+//   geometry free, ranking on $/trade runs off the edge of the grid to a 12xATR stop and a 6R
+//   target at $1,578/trade on 9 trades, which is the search buying HOLD TIME on a market that
+//   rose 89%, not edge. See docs/ib/STUDY_RSI_WICK.md.
+//
+//   Shape check: the locked block earns LESS per trade than research, which is the shape an
+//     edge should have. Read the LOCKED figure as the forward expectation.
+//
+// VALIDATION ACTUALLY RUN, not asserted:
+//   * matched control (4,000 draws) on BOTH blocks -- research p 0.002, locked p 0.116
+//   * 100,000-path Monte Carlo -- bootstrap P(net<0) 0.03%, permutation median maxDD $1,032
+//     against a realised $649
+//   * 6-fold sequential walk-forward, no re-fitting -- 6/6 folds profitable
+//   * cost stress to 3x modelled friction -- still profitable
+//   * TRUE 1-MINUTE PATH execution, every exit re-resolved off 1m bars rather than assumed
+//     bar ordering -- reproduces the bar-level result exactly (1.0% unresolved)
+//   * parameter neighbourhood swept; the edge decays smoothly rather than sitting on one rung
+//
+// THREE THINGS THAT ARE EASY TO GET WRONG, AND WERE, HERE:
+//   * ATR is ta.ema(ta.tr(true), 14), alpha 2/15. Pine's ta.atr is Wilder's RMA at 1/14.
+//   * Clock conditions go through an explicit timezone. Pine's bare hour/minute are EXCHANGE
+//     time -- Chicago for CME -- and the research is New York.
+//   * Entries require barstate.isconfirmed. Without it the Strategy Tester's "Script execution"
+//     boxes change the result: measured on one rule here that was 5.1x as many signals, 80% of
+//     them on bars that never satisfied the rule at all.
+//
+// CONFIGURATION LOCK: the "Configuration" input defaults to "Best measured (locked)", which
+// overrides every other input with the configuration above and refuses to trade off its design
+// timeframe. The figures in this header describe that setting and no other.
+//
+// NOT COMPILED BY TRADINGVIEW. A compiler error is a typo, not a changed strategy.
+// Research tooling for education and analysis. Not financial advice.
+// =============================================================================================
+
+strategy("BASE RSI14>70 + rising + wick>50% | 60m long | 2.5xATR 1.0R", overlay = true, initial_capital = 25000,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     commission_type = strategy.commission.cash_per_order, commission_value = 0.72,
+     slippage = 2, pyramiding = 0, calc_on_every_tick = false,
+     process_orders_on_close = false)
+
+// ---- configuration preset --------------------------------------------------------------------
+preset = input.string("Best measured (locked)", "Configuration", group = "Configuration",
+     options = ["Best measured (locked)", "Custom (untested)"],
+     tooltip = "Locked reproduces the header exactly and ignores every input below it. " +
+     "Custom lets the inputs through and the header's statistics no longer describe what runs.")
+locked = preset == "Best measured (locked)"
+
+M_TFMIN   = 60
+M_SIGFROM = 0
+M_SIGTO   = 0
+M_ATRMULT = 2.5
+M_TPR     = 1.0
+
+tfOK    = timeframe.in_seconds() == M_TFMIN * 60
+tfBlock = locked and not tfOK
+
+// ---- primitives, defined to match the research exactly ---------------------------------------
+tzIn   = input.string("America/New_York", "Timezone for clock conditions",
+     options = ["America/New_York", "America/Chicago", "Europe/London", "exchange"], group = "Setup")
+tzEff  = locked ? "America/New_York" : tzIn
+barMin = tzEff == "exchange" ? hour * 60 + minute : hour(time, tzEff) * 60 + minute(time, tzEff)
+
+hhmmToMin(x) =>
+    math.floor(x / 100) * 60 + x % 100
+
+sigFromIn = input.int(0, "Signals start (HHMM)", minval = 0, maxval = 2359, group = "Session")
+sigToIn   = input.int(0, "Signals stop (HHMM)", minval = 0, maxval = 2400, group = "Session")
+sigFromEff = locked ? M_SIGFROM : sigFromIn
+sigToEff   = locked ? M_SIGTO : sigToIn
+sigFrom   = hhmmToMin(sigFromEff)
+sigTo     = hhmmToMin(sigToEff)
+inSession = sigFrom >= sigTo ? true : (barMin >= sigFrom and barMin < sigTo)
+
+atrV     = ta.ema(ta.tr(true), 14)          // NOT ta.atr -- see the header
+rsiV     = ta.rsi(close, 14)
+barRange = math.max(high - low, syminfo.mintick)
+lowick   = 100.0 * (math.min(close, open) - low) / barRange
+
+winMode  = input.string("All available history", "Backtest window", group = "Backtest window",
+     options = ["All available history", "Last 90 days", "Last 365 days", "Last 3 years", "Custom dates"])
+fromDate = input.time(timestamp("01 Jan 2023 00:00 +0000"), "Custom from", group = "Backtest window")
+toDate   = input.time(timestamp("01 Jan 2030 00:00 +0000"), "Custom to", group = "Backtest window")
+daysBack = winMode == "Last 90 days" ? 90 : winMode == "Last 365 days" ? 365 : winMode == "Last 3 years" ? 1095 : 0
+inWindow = winMode == "Custom dates" ? (time >= fromDate and time <= toDate) : daysBack == 0 ? true : (time >= timenow - daysBack * 86400000)
+
+allowLong  = input.bool(true, "Allow longs", group = "Direction")
+allowShort = input.bool(false, "Allow shorts", group = "Direction",
+     tooltip = "This rule was measured in ONE direction against that direction's own base rate. " +
+     "Flipping it does not give you the mirror-image edge.")
+atrMult = input.float(2.5, "Stop = N x ATR", minval = 0.25, step = 0.25, group = "Risk")
+tpR     = input.float(1.0, "Target = N x risk", minval = 0.25, step = 0.25, group = "Risk")
+
+longEff    = locked ? true : allowLong
+shortEff   = locked ? false : allowShort
+atrMultEff = locked ? M_ATRMULT : atrMult
+tpREff     = locked ? M_TPR : tpR
+
+// ---- the rule --------------------------------------------------------------------------------
+c0 = rsiV > 70
+c1 = rsiV > rsiV[1]
+c2 = lowick > 50
+trig = c0 and c1 and c2 and inSession
+
+ready = not na(atrV) and atrV > 0 and bar_index > 300
+isFlat = strategy.position_size == 0
+
+if trig and ready and isFlat and inWindow and not tfBlock and barstate.isconfirmed
+    riskTicks = math.max(math.round(atrMultEff * atrV / syminfo.mintick), 1)
+    if longEff
+        strategy.entry("L", strategy.long)
+        strategy.exit("Lx", "L", loss = riskTicks, profit = tpREff * riskTicks)
+    if shortEff
+        strategy.entry("S", strategy.short)
+        strategy.exit("Sx", "S", loss = riskTicks, profit = tpREff * riskTicks)
+
+if strategy.position_size != 0 and not inWindow and barstate.isconfirmed
+    strategy.close_all(comment = "outside backtest window")
+
+plotshape(trig and longEff, "long", shape.triangleup, location.belowbar, color.teal, size = size.tiny)
+
+// ---- configuration banner --------------------------------------------------------------------
+var table cfg = table.new(position.top_center, 1, 2, border_width = 1)
+if barstate.islast
+    string msg = ""
+    color bg = color.teal
+    if not tfOK
+        msg := "WRONG TIMEFRAME - this is a " + str.tostring(M_TFMIN) + "m strategy, chart is " + timeframe.period
+        bg := color.red
+        if locked
+            msg := msg + " - TRADING BLOCKED"
+    else if locked
+        msg := "AS MEASURED - header figures apply"
+    else
+        msg := "CUSTOM - header figures do NOT apply"
+        bg := color.orange
+    table.cell(cfg, 0, 0, msg, text_size = size.normal, text_color = color.white, bgcolor = bg)
+    det = "stop " + str.tostring(atrMultEff) + "xATR   target " + str.tostring(tpREff) + "R   signals " + str.tostring(sigFromEff) + "-" + str.tostring(sigToEff) + "   no time stop"
+    table.cell(cfg, 0, 1, det, text_size = size.small, text_color = color.gray)
+
+// ---- which rule is loaded --------------------------------------------------------------------
+var table rt = table.new(position.top_right, 2, 3, border_width = 1)
+if barstate.islast
+    table.cell(rt, 0, 0, "RSI14>70", text_size = size.small, text_color = color.gray)
+    table.cell(rt, 1, 0, c0 ? "yes" : "no", text_size = size.small, text_color = c0 ? color.teal : color.gray)
+    table.cell(rt, 0, 1, "RSI14 rising", text_size = size.small, text_color = color.gray)
+    table.cell(rt, 1, 1, c1 ? "yes" : "no", text_size = size.small, text_color = c1 ? color.teal : color.gray)
+    table.cell(rt, 0, 2, "lower wick>50%", text_size = size.small, text_color = color.gray)
+    table.cell(rt, 1, 2, c2 ? "yes" : "no", text_size = size.small, text_color = c2 ? color.teal : color.gray)

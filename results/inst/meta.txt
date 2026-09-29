@@ -1,0 +1,74 @@
+
+==============================================================================================================================
+A. THE ARITHMETIC -- win rate PF 2.0 needs, by target ratio q (stop = 1) and all-in cost c in stop units
+==============================================================================================================================
+  driftless base = 1/(1+q); w* = 2(1+c) / (2(1+c) + q - c)
+      q    base    c=0.0   c=0.03   c=0.06    c=0.1    c=0.2   lift needed at c=0.06
+    0.5   66.7%    80.0%    81.4%    82.8%    84.6%    88.9%   +16.1 pts
+   0.75   57.1%    72.7%    74.1%    75.4%    77.2%    81.4%   +18.3 pts
+    1.0   50.0%    66.7%    68.0%    69.3%    71.0%    75.0%   +19.3 pts
+    1.5   40.0%    57.1%    58.4%    59.6%    61.1%    64.9%   +19.6 pts
+    2.0   33.3%    50.0%    51.1%    52.2%    53.7%    57.1%   +18.9 pts
+    3.0   25.0%    40.0%    41.0%    41.9%    43.1%    46.2%   +16.9 pts
+  Cost as a fraction of the stop on this data (round turn / stop): NQ 5m 0.75xATR ~24%, NQ 15m 1.5xATR ~5%,
+  US100 15m 2.5xATR ~2%. The best honest lifts measured on this branch are +1 to +5 points over base.
+
+==============================================================================================================================
+B. THE EMPIRICAL FRONTIER -- V61 tensor with INTRADAY hold caps, RTH entries, NQ 5/15/30m, RESEARCH
+==============================================================================================================================
+  tf 5: 1,814,400 cells, 9,207 candidate signal bars
+  tf 15: 1,814,400 cells, 3,442 candidate signal bars
+  tf 30: 1,814,400 cells, 1,948 candidate signal bars
+
+  INTRADAY cells (hold <= 6.5h): 4,082,400; with >= 40 research trades: 2,792,878
+  share profitable on research: 89.5%; median PF 1.411; median trades/yr 47
+  cells meeting PF >= 2.0 AND >= 200 trades/yr ON RESEARCH: 0
+  cells with PF >= 2.0 at ANY count: 442,847  (median trades/yr among them: 31)
+
+  THE ENVELOPE -- best research PF available at each minimum trades-per-year, and what that cell then does on LOCKED (one read):
+   >= trades/yr   cells  best PF res    tpy   tf  hold  stop   tp    cvd |  PF lock  tpy lock  pct lock
+             25 2,535,299        6.057     28   15    2h   3.0    6 (5, 10) |    2.661        24   +0.1345
+             50 1,289,557        3.553     50   15  6.5h   1.5    0 (4, 30) |    1.458        65   +0.0240
+            100 434,346        2.173    104   15  6.5h   1.5    0 (0, 0) |    1.514       104   +0.0666
+            150 198,255        1.824    156    5  6.5h   1.5    0 (0, 0) |    0.754       145   +0.0049
+            200 104,364        1.616    203    5    4h   1.5    0 (2, 40) |    0.878       219   -0.0094
+            300  37,028        1.458    344    5    4h   1.5    0 (0, 0) |    0.981       331   +0.0028
+            500   7,329        1.236    515    5    4h   1.5    0 (0, 0) |    0.982       505   -0.0025
+            800   1,133        1.048    825    5    2h   3.0    2 (0, 0) |    0.972       783   +0.0079
+  multiplicity of that locked read: 2,792,878 research cells were seen; 8 envelope cells read.
+
+  The POPULATION transfer, intraday cells: corr(PF research, PF locked) = +0.149 Pearson; top 1% by research PF: mean PF 3.482 -> locked 1.223; whole population locked PF mean 1.217
+
+  marginal PF on research and locked by HOLD CAP (the intraday constraint priced directly):
+        2h: research PF 1.457  locked PF 1.184  trades/yr 68  pct/trade res +0.0464 lock +0.0329
+        4h: research PF 1.518  locked PF 1.263  trades/yr 66  pct/trade res +0.0577 lock +0.0464
+      6.5h: research PF 1.542  locked PF 1.204  trades/yr 66  pct/trade res +0.0617 lock +0.0406
+     swing: research PF 1.551  locked PF 1.241  trades/yr 66  pct/trade res +0.0661 lock +0.0399
+
+==============================================================================================================================
+C. DEFLATED SHARPE of the best research cell, at the trial count actually run
+==============================================================================================================================
+  best research cell: PF 7.289, 24 trades/yr, per-trade SR 0.847; trials N = 2,792,878; SR0 (expected best of noise) 0.651
+  DEFLATED SHARPE 0.8733   (the probability the observed SR beats what 2,792,878 noise draws would give)
+  same cell, LOCKED: PF 0.903, 19 trades/yr
+  primary rule (the >=300 trades/yr envelope cell on 5m): {'ent': 15, 'exN': 30, 'stop': 1.5, 'tp': 0.0, 'hold': 48, 'adapt': 1, 'k': 0, 'w': 0, 'ma': 2.0, 'chop': 99.0, 'psh': 1}
+  research PF 1.458 at 344 trades/yr; locked PF 0.981 at 331
+  reproduced trade table: research n 661 PF 1.446 | locked n 344 PF 1.051
+  40 features after a 98% coverage floor; 1005 trades
+
+==============================================================================================================================
+A. META-LABEL LADDER on research (OOF, folds 2-6), keep the top fraction by PREDICTED R; twin = shuffled labels
+==============================================================================================================================
+  base (no filter) on the scored folds: n 551 PF 1.407 pct +0.0203 p90 R 5.19  trades/yr 344
+      model      IC |                     keep 80% |                     keep 60% |                     keep 40% | twin IC / keep60 PF
+      ridge  +0.031 | PF 1.409 n441 tpy 276 p90 5.43 p 0.48 | PF 1.256 n331 tpy 207 p90 5.19 p 0.84 | PF 1.522 n221 tpy 138 p90 6.53 p 0.32 | +0.012 / 1.455
+   lightgbm  +0.026 | PF 1.557 n441 tpy 276 p90 6.44 p 0.06 | PF 1.506 n331 tpy 207 p90 6.44 p 0.28 | PF 1.599 n221 tpy 138 p90 6.53 p 0.21 | +0.048 / 1.511
+  'p' = share of same-selectivity RANDOM subsets with a PF at least as high; the twin column is the noise floor.
+
+==============================================================================================================================
+B. ONE LOCKED READ -- pre-declared: ridge trained on ALL research trades, keep the top 60% by predicted R
+==============================================================================================================================
+  locked base:      n 344 PF 1.051 pct +0.0028 p90 R 2.95  trades/yr 331
+  locked, kept 60%: n 192 PF 0.865 pct -0.0075 p90 R 3.82  trades/yr 185  IC -0.015
+  same-selectivity random filter on locked: median PF 1.026  p 0.660
+  largest ridge coefficients: mom.rsi14 -1.31, mom.wick_up +0.85, loc.pos20 +0.82, tq.er20 +0.80, loc.close_pos_bar +0.75, x.close_vs_ef_atr -0.72

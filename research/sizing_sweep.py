@@ -217,7 +217,7 @@ def main(conds=("RSI14>70", "lower wick>50%"), side=1, tp=1.0, fl=0, tf=60,
                   sub, A["kelly"], np.int64(paths), np.int64(7), OUT)
         A["rank"] = rank; A["BOOT"] = OUT
     print(f"   done, {time.time()-t0:.0f}s")
-    np.savez_compressed("/tmp/sizing.npz",
+    np.savez_compressed("results/sizing/sizing.npz",
                         grid=grid, stops=np.array(STOPS),
                         **{f"RES{i}": A["RES"] for i, A in enumerate(ALL)},
                         **{f"BOOT{i}": A["BOOT"] for i, A in enumerate(ALL)},

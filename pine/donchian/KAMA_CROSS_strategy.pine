@@ -1,0 +1,160 @@
+//@version=5
+// KAMA(9) x EMA(50) crossover, with an optional moving-average entry tap.
+// Both were tested. Read the header before you run either.
+//
+// ================================ WHAT WAS MEASURED ================================
+// NQ 30-minute, 2022-12 to 2025-12, MNQ fees and bar-speed slippage (1.72 pts round turn),
+// split at the first 65% of sessions, locked block read once. Exit is a 3xATR trailing
+// stop in every cell, so only the entry varies.
+//
+// PART 1 -- THE CROSSOVER AS A TRIGGER. Best of twelve crossovers tested on two
+// timeframes; KAMA 9 was specified, its partner was chosen. Bonferroni factor 24.
+//
+//   KAMA 9 x EMA 50  research  n 317  +20.60 pts/trade  R +0.1600  control +0.0188  p 0.0050  PF 1.48
+//                    LOCKED    n 193   +4.04 pts/trade  R +0.0612  control +0.0174  p 0.2575  PF 1.07
+//
+//   IT DOES NOT SURVIVE. p 0.005 -> 0.258, +20.60 -> +4.04 points a trade, PF 1.48 -> 1.07,
+//   and maximum drawdown grows 1,698 -> 2,844 points. The decay is at least the RIGHT WAY
+//   round -- a rule picked on research should get worse out of sample, not better -- but it
+//   decays all the way to nothing. 2025 is -0.9 points a trade. The top 1% of trades supply
+//   87% of net P&L and the top 5% supply 218%: remove twelve trades and it loses money.
+//
+//   THE PERIOD 9 IS NOT SPECIAL. Over a 6x7 grid of KAMA and EMA lengths the surface rises
+//   MONOTONICALLY with the KAMA period -- KAMA 5 rows average +0.05 R, KAMA 20 rows +0.19 R,
+//   and KAMA 20 x EMA 50 scores +0.2566 on research. That one also dies out of sample
+//   (+0.1067, p 0.146, PF 1.05). A gradient that runs away from your parameter is telling you
+//   the parameter is not the mechanism.
+//
+// PART 2 -- THE CROSSOVER AS AN ENTRY TAP, i.e. take the Donchian breakout but wait for a
+// pullback to KAMA 9 instead of paying the next open. Two findings, and both are negative:
+//
+//   1. THE TAP LOSES TO SIMPLY TAKING THE TRADE. Out of sample the market-order baseline is
+//      +0.1387 R on all 275 breakouts; waiting to touch KAMA 9 fills only 31% of them and
+//      returns -0.0223 R. On research: +0.1026 on 475 against +0.0417 on 19%. The fill is
+//      genuinely better -- 1.4 to 1.7 ATR cheaper -- and it does not matter, because waiting
+//      for an adverse excursion discards precisely the trades that ran. That is the same
+//      result a limit-entry study on this branch reached from the other direction.
+//   2. THE MOVING AVERAGE IS NOT CHOOSING THE LOCATION; THE DISTANCE IS. Every tap was
+//      compared against a blind limit resting the SAME number of ATRs from the signal close,
+//      with no average in it. Not one tap beat that control on either block -- research
+//      p 0.162 to 0.985, locked p 0.047 to 0.686, and the single sub-0.05 cell (SMA 20) is
+//      one of about forty and collapses from +0.4884 to +0.0914. KAMA, EMA, Hull and SMA taps
+//      all land where a number would have put them.
+//
+// SO: the tap is OFF by default, and it is here to be disproved on your own data, not used.
+// ONLY NQ was available. Nothing here is cross-market evidence.
+// ===================================================================================
+
+strategy("KAMA cross + optional MA entry tap", overlay=true, initial_capital=100000,
+  default_qty_type=strategy.fixed, default_qty_value=1, pyramiding=0,
+  commission_type=strategy.commission.cash_per_order, commission_value=0.72,
+  slippage=2, calc_on_every_tick=false, process_orders_on_close=false)
+
+gT      = "Trigger"
+kLen    = input.int(9,    "KAMA length",            minval=2,   group=gT)
+kFast   = input.int(2,    "KAMA fast constant",     minval=1,   group=gT)
+kSlow   = input.int(30,   "KAMA slow constant",     minval=2,   group=gT)
+sLen    = input.int(50,   "Slow EMA length",        minval=2,   group=gT)
+atrLen  = input.int(14,   "ATR length",             minval=1,   group=gT)
+atrMul  = input.float(3.0,"ATR trailing stop x",    minval=0.1, group=gT, step=0.1)
+useL    = input.bool(true,  "Longs",  group=gT, inline="side")
+useS    = input.bool(true,  "Shorts", group=gT, inline="side")
+
+gE      = "Entry tap (measured WORSE than taking the trade -- see header)"
+useTap  = input.bool(false, "Wait for a pullback before entering", group=gE)
+tapSrc  = input.string("KAMA", "Pull back to", options=["KAMA","EMA fast","ATR distance"], group=gE)
+tapFast = input.int(9,   "Tap EMA length",             minval=2,   group=gE)
+tapDist = input.float(1.5,"ATR distance (that option)", minval=0.1, group=gE, step=0.1)
+tapWin  = input.int(5,   "Give up after N bars",       minval=1,   group=gE)
+
+// ---- KAMA, written out because Pine has no built-in ------------------------------------
+// er = |close - close[n]| / sum(|close - close[1]|, n); sc = (er*(fsc-ssc) + ssc)^2
+// The seed is the close at the first bar with n bars of history, matching the research code.
+fsc = 2.0 / (kFast + 1.0)
+ssc = 2.0 / (kSlow + 1.0)
+chg = math.abs(close - close[kLen])
+vol = math.sum(math.abs(close - close[1]), kLen)
+er  = vol > 0 ? chg / vol : 0.0
+sc  = math.pow(er * (fsc - ssc) + ssc, 2)
+var float kama = na
+kama := na(kama) ? (bar_index >= kLen ? close : na) : kama + sc * (close - kama)
+
+slowMA = ta.ema(close, sLen)
+atrV   = ta.atr(atrLen)
+tapMA  = tapSrc == "KAMA" ? kama : ta.ema(close, tapFast)
+
+ready = not na(kama) and not na(slowMA) and not na(atrV) and atrV > 0
+
+// barstate.isconfirmed so tick evaluation cannot change the result.
+xUp = ready and kama > slowMA and kama[1] <= slowMA[1] and barstate.isconfirmed
+xDn = ready and kama < slowMA and kama[1] >= slowMA[1] and barstate.isconfirmed
+
+goLong  = useL and xUp
+goShort = useS and xDn
+
+// ---- the tap: arm on the signal, fill on a limit, abandon after N bars ------------------
+var int   armSide = 0
+var float armLv   = na
+var float armATR  = na
+var int   armBar  = na
+
+if useTap and strategy.position_size == 0 and (goLong or goShort)
+    armSide := goLong ? 1 : -1
+    armATR  := atrV
+    armBar  := bar_index
+    armLv   := tapSrc == "ATR distance" ? close - (goLong ? 1 : -1) * tapDist * atrV : tapMA
+
+if useTap and armSide != 0 and bar_index - armBar > tapWin
+    armSide := 0
+    armLv   := na
+
+// ---- entries ---------------------------------------------------------------------------
+var float entATR = na
+
+if not useTap and strategy.position_size == 0 and goLong
+    entATR := atrV
+    strategy.entry("L", strategy.long)
+
+if not useTap and strategy.position_size == 0 and goShort
+    entATR := atrV
+    strategy.entry("S", strategy.short)
+
+if useTap and strategy.position_size == 0 and armSide > 0 and not na(armLv)
+    entATR := armATR
+    strategy.entry("L", strategy.long, limit=armLv)
+
+if useTap and strategy.position_size == 0 and armSide < 0 and not na(armLv)
+    entATR := armATR
+    strategy.entry("S", strategy.short, limit=armLv)
+
+if strategy.position_size != 0
+    armSide := 0
+
+// ---- the trail: ratchets from entry, never loosens --------------------------------------
+var float trail = na
+
+if strategy.position_size == 0
+    trail := na
+
+if strategy.position_size > 0 and not na(entATR)
+    seed = strategy.position_avg_price - atrMul * entATR
+    cand = high - atrMul * entATR
+    trail := na(trail) ? seed : math.max(trail, cand)
+
+if strategy.position_size < 0 and not na(entATR)
+    seed = strategy.position_avg_price + atrMul * entATR
+    cand = low + atrMul * entATR
+    trail := na(trail) ? seed : math.min(trail, cand)
+
+if strategy.position_size > 0 and not na(trail)
+    strategy.exit("L x", from_entry="L", stop=trail)
+
+if strategy.position_size < 0 and not na(trail)
+    strategy.exit("S x", from_entry="S", stop=trail)
+
+plot(kama,   "KAMA",    color=color.new(color.aqua, 0), linewidth=2)
+plot(slowMA, "Slow EMA",color=color.new(color.orange, 0))
+plot(useTap and armSide != 0 ? armLv : na, "Tap limit", color=color.new(color.yellow, 0),
+  style=plot.style_linebr)
+plot(strategy.position_size != 0 ? trail : na, "ATR trail", color=color.new(color.red, 0),
+  style=plot.style_linebr)

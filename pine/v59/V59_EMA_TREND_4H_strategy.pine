@@ -1,0 +1,177 @@
+//@version=6
+// V59 -- EMA 16/64 trend following with a hard four-hour ceiling, ADX and ATR conditions.
+//
+// READ THIS BEFORE TRADING IT. 243,000 configurations were swept per market on nine years of
+// US30 and US100 and the answer is negative.
+//
+// AS BRIEFED -- the plain 16/64 cross, both sides, 2N stop, 2R target, four-hour ceiling, all
+// hours -- scores, in ATR units at the signal bar and net of costs:
+//     US30   research -0.0503 / locked -0.1577   PF 0.948 / 0.849
+//     US100  research -0.1031 / locked -0.0532   PF 0.898 / 0.947
+//     NQ     (never searched)          +0.0039   PF 1.004,  matched control p 0.527
+// It loses to a minute-of-day matched random entry running the SAME management at p 0.53-0.99.
+// An independent vectorbt rebuild agrees on the trade count to 99.4-99.9% in all four cells and
+// puts the GROSS edge between -3.35 and +0.22 points a trade, against round turns of 1.72 (US30)
+// and 1.215 (US100). The gross edge is smaller than the commission.
+//
+// THIS SCRIPT is the best-supported configuration rather than the best-scoring one: the ONLY
+// condition in the pool that beat `off` on all four market-block columns is the ATR FLOOR, and
+// its mirror (ATR <= 0.8x) is the worst setting everywhere, so it is a gradient and not a
+// threshold. Read once on NQ it earns +0.0567 ATR/trade at PF 1.097 -- and a random entry with
+// the same management earns +0.0413, so the matched control returns p 0.449. THAT IS NOT AN EDGE.
+// It is shipped so the rule can be inspected and re-measured, not because it makes money.
+//
+// WHAT THE SEARCH DID ESTABLISH, which outlives the configuration:
+//   * corr(research, locked) over 175,000 scorable configurations is -0.070 on US30 and +0.094
+//     on US100. Research rank carries no information about held-back performance here.
+//   * The PLAIN CROSS beats both confirmation mechanics on both markets. Waiting for a close
+//     beyond the cross bar, or for a pullback to the fast EMA, both score worse.
+//   * ADX <= 20 -- the INVERTED filter -- dominated the top 1000 at 55% and then split across
+//     markets on the marginal read (+0.0244 US30 locked, -0.0220 US100 locked). A consensus over
+//     a ranking is not a marginal effect.
+//   * NO TAKE PROFIT is best or tied-best in all four columns, for the thirteenth time here.
+//   * The four-hour ceiling costs nothing and adds nothing: 1h to 4h spans 0.02 ATR/trade.
+//
+// Research tooling for education and analysis -- not financial advice. Never backtested on
+// TradingView; read the Strategy Tester's trade count and commission load before its P&L.
+
+strategy("V59 EMA 16/64 Trend, 4h ceiling", "V59 EMA4H", overlay = true,
+     initial_capital = 100000, default_qty_type = strategy.fixed, default_qty_value = 1,
+     commission_type = strategy.commission.cash_per_order, commission_value = 0.86,
+     slippage = 1, calc_on_every_tick = false, process_orders_on_close = false)
+
+TZ = "America/New_York"
+
+gT = "Trend"
+lenFast = input.int(16, "EMA fast", minval = 2, group = gT, inline = "e")
+lenSlow = input.int(64, "EMA slow", minval = 3, group = gT, inline = "e")
+goLong  = input.bool(true,  "Longs",  group = gT, inline = "s")
+goShort = input.bool(false, "Shorts", group = gT, inline = "s",
+     tooltip = "Shorts were 11% of the top 1000 and negative on the marginal read on both markets.")
+
+gG = "Geometry"
+stopN   = input.float(2.0, "Stop -- ATR multiples", minval = 0.1, maxval = 6.0, step = 0.1, group = gG)
+useTgt  = input.bool(false, "Use a take profit", group = gG,
+     tooltip = "OFF is the researched setting. No target is best or tied-best in all four columns.")
+tgtR    = input.float(2.0, "Target -- R multiples of the stop", minval = 0.2, maxval = 9.0, step = 0.1, group = gG)
+useTrail = input.bool(true, "ATR trailing stop", group = gG)
+holdH   = input.float(4.0, "Maximum hold (hours)", minval = 0.25, maxval = 24.0, step = 0.25, group = gG,
+     tooltip = "A DURATION, not a bar count -- it is converted with timeframe.in_seconds() so the setting means the same thing on every chart.")
+
+gC = "Conditions, read at the SIGNAL bar"
+useAtr  = input.bool(true, "ATR floor vs its own trailing median", group = gC, inline = "a")
+atrMin  = input.float(1.2, "", minval = 0.2, maxval = 3.0, step = 0.05, group = gC, inline = "a",
+     tooltip = "The only condition of the pool that beat `off` on all four market-block columns.")
+atrLook = input.int(480, "  median lookback (bars)", minval = 60, maxval = 2000, group = gC)
+useAdx  = input.bool(false, "ADX condition", group = gC, inline = "d")
+adxDir  = input.string("floor", "", options = ["floor", "ceiling"], group = gC, inline = "d")
+adxLvl  = input.float(20.0, "", minval = 5, maxval = 60, step = 1, group = gC, inline = "d",
+     tooltip = "OFF by default. The ceiling won the ranking and then disagreed across markets on the marginal read.")
+
+gS = "Session (New York wall-clock)"
+useSess = input.bool(true, "Restrict entries to a window", group = gS)
+sH0 = input.int(9,  "from -- hour", minval = 0, maxval = 23, group = gS, inline = "f")
+sM0 = input.int(30, ":",            minval = 0, maxval = 59, group = gS, inline = "f")
+sH1 = input.int(16, "to -- hour",   minval = 0, maxval = 23, group = gS, inline = "g")
+sM1 = input.int(0,  ":",            minval = 0, maxval = 59, group = gS, inline = "g")
+flatOut = input.bool(true, "Flatten at the window's end", group = gS)
+
+showHud = input.bool(true, "Show panel", group = "Display")
+
+// ATR is ema(tr) and not ta.atr; ta.dmi returns [+DI, -DI, ADX] and taking the first element
+// substitutes +DI for the ADX silently.
+atrN = ta.ema(ta.tr(true), 14)
+[_p, _n, adxV] = ta.dmi(14, 14)
+emaF = ta.ema(close, lenFast)
+emaS = ta.ema(close, lenSlow)
+atrMed = ta.median(atrN, atrLook)
+
+// A hold is a DURATION. A bar count would mean four hours on a 15-minute chart and sixteen
+// minutes on a one-minute one -- the unit error that cost V57 two live signals.
+barMin  = math.max(timeframe.in_seconds() / 60.0, 1.0 / 60.0)
+holdBar = math.max(1, math.round(holdH * 60.0 / barMin))
+
+nyMin = hour(time, TZ) * 60 + minute(time, TZ)
+winFrom = sH0 * 60 + sM0
+winTo   = sH1 * 60 + sM1
+inWin   = not useSess or (nyMin >= winFrom and nyMin < winTo)
+winEnd  = useSess and flatOut and nyMin >= winTo and nyMin[1] < winTo
+
+crossUp = ta.crossover(emaF, emaS)
+crossDn = ta.crossunder(emaF, emaS)
+okAtr = not useAtr or (not na(atrMed) and atrMed > 0 and atrN / atrMed >= atrMin)
+okAdx = not useAdx or (adxDir == "floor" ? adxV >= adxLvl : adxV <= adxLvl)
+gate  = okAtr and okAdx and inWin and bar_index > lenSlow * 3
+
+longSig  = goLong  and crossUp and gate
+shortSig = goShort and crossDn and gate
+
+var float pendAtr = na
+var float trailLv = na
+var int   entBar  = na
+
+// Every block writing `var` state is guarded, not only the entries: `close`, `high`, `ta.dmi`
+// and `strategy.opentrades` all differ mid-bar, and durable state taken from a mid-bar value is
+// a price the bar-close run cannot see (`STUDY_TICK_RECALC.md`).
+if barstate.isconfirmed and strategy.position_size == 0 and (longSig or shortSig)
+    pendAtr := atrN
+    trailLv := na
+    entBar  := bar_index
+    risk = stopN * atrN
+    if longSig
+        strategy.entry("L", strategy.long)
+        strategy.exit("xL", from_entry = "L", loss = risk / syminfo.mintick,
+             profit = useTgt ? tgtR * risk / syminfo.mintick : na)
+    else
+        strategy.entry("S", strategy.short)
+        strategy.exit("xS", from_entry = "S", loss = risk / syminfo.mintick,
+             profit = useTgt ? tgtR * risk / syminfo.mintick : na)
+
+// The trail is re-stated every confirmed bar while a position is open. The bracket above already
+// holds the hard stop, so this only ever tightens it.
+if barstate.isconfirmed and useTrail and strategy.position_size != 0 and not na(pendAtr)
+    risk = stopN * pendAtr
+    if strategy.position_size > 0
+        lv = high - risk
+        trailLv := na(trailLv) ? lv : math.max(trailLv, lv)
+        strategy.exit("xL", from_entry = "L", stop = trailLv,
+             limit = useTgt ? strategy.position_avg_price + tgtR * risk : na)
+    else
+        lv = low + risk
+        trailLv := na(trailLv) ? lv : math.min(trailLv, lv)
+        strategy.exit("xS", from_entry = "S", stop = trailLv,
+             limit = useTgt ? strategy.position_avg_price - tgtR * risk : na)
+
+// `strategy.close_all()` fills at the NEXT bar's open -- it cannot sell the close of the bar
+// that triggers it. Measured on the researched configuration that gap is worth +0.001 ATR/trade.
+tooOld = strategy.position_size != 0 and not na(entBar) and bar_index - entBar >= holdBar
+if barstate.isconfirmed and (tooOld or (winEnd and strategy.position_size != 0))
+    strategy.close_all(comment = tooOld ? "4h" : "flat")
+
+plot(emaF, "EMA fast", color.new(color.aqua, 0), 2)
+plot(emaS, "EMA slow", color.new(color.orange, 0), 2)
+plot(strategy.position_size != 0 and useTrail ? trailLv : na, "Trail", color.new(color.red, 0),
+     2, plot.style_linebr)
+bgcolor(useSess and inWin ? color.new(color.teal, 94) : na, title = "entry window")
+
+var table hud = table.new(position.top_right, 2, 6, border_width = 1)
+if showHud and barstate.islast
+    table.cell(hud, 0, 0, "V59 EMA4H", text_color = color.white,
+         bgcolor = color.new(color.teal, 20), text_size = size.small)
+    table.cell(hud, 1, 0, timeframe.period, text_color = color.white,
+         bgcolor = color.new(color.teal, 20), text_size = size.small)
+    table.cell(hud, 0, 1, "Trend", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 1, emaF > emaS ? "fast above slow" : "fast below slow", text_size = size.small)
+    table.cell(hud, 0, 2, "ATR vs median", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 2, na(atrMed) or atrMed <= 0 ? "--" :
+         str.tostring(atrN / atrMed, "#.00") + "x  " + (okAtr ? "ok" : "blocks"),
+         text_size = size.small, text_color = okAtr ? color.new(color.green, 0) : color.new(color.red, 0))
+    table.cell(hud, 0, 3, "ADX", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 3, str.tostring(adxV, "#.0") + (useAdx ? (okAdx ? "  ok" : "  blocks") : "  off"),
+         text_size = size.small)
+    table.cell(hud, 0, 4, "Max hold", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 4, str.tostring(holdH, "#.##") + "h = " + str.tostring(holdBar) + " bars",
+         text_size = size.small)
+    table.cell(hud, 0, 5, "Evidence", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 5, "control p 0.449 on NQ -- no edge", text_size = size.small,
+         text_color = color.new(color.red, 0))

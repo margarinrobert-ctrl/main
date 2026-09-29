@@ -1,0 +1,38 @@
+{
+ "top": {
+  "sess": "ny",
+  "p": {
+   "ema_slow": 400,
+   "ema_pull": 50,
+   "ema_tight": 20,
+   "atr_len": 14,
+   "atr_stop": 0.25,
+   "vol_mult": 1.8,
+   "range_mult": 0.6,
+   "wick_body": 3.0,
+   "ambig": 0.001,
+   "tighten_R": 2.5
+  },
+  "tgt_R": 6.0,
+  "side": 1,
+  "flatten": false
+ },
+ "robust": {
+  "sess": "ny",
+  "p": {
+   "ema_slow": 300,
+   "ema_pull": 70,
+   "ema_tight": 20,
+   "atr_len": 14,
+   "atr_stop": 0.25,
+   "vol_mult": 1.8,
+   "range_mult": 0.4,
+   "wick_body": 3.0,
+   "ambig": 0.001,
+   "tighten_R": 2.5
+  },
+  "tgt_R": 0.0,
+  "side": 1,
+  "flatten": false
+ }
+}

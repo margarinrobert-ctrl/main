@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '.'))
+import daykey as DK  # noqa: E402  (pandas 3 made us the default resolution; see the module)
 
 NY = "America/New_York"
 
@@ -40,7 +43,7 @@ def session_index(idx: pd.DatetimeIndex, start_min: int) -> np.ndarray:
     # Local WALL-CLOCK days since epoch, matching dayIndex in clock.ts (which floors local time,
     # not UTC). Dropping the tz after conversion is what makes it wall-clock rather than absolute.
     local_midnight = np.asarray(idx.tz_localize(None).normalize(), dtype="datetime64[ns]")
-    day = local_midnight.astype("int64") // 86_400_000_000_000
+    day = DK.to_day(local_midnight)
     return (day - (mod < start_min).astype(np.int64)).astype(np.int64)
 
 

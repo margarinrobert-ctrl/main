@@ -1,0 +1,266 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//@version=5
+
+// VWAP-EMA TWO-SIDED -- the best LONG configuration and the best SHORT configuration this branch's
+// search produced, on one chart, each side carrying its own parameters.
+// NO EDGE IS CLAIMED. Both sides die on the block they were not chosen on. The header is the
+// measurement and it is the reason to be careful, not the reason to trade this.
+//
+// ============================ WHERE THE TWO SIDES CAME FROM ============================
+// 4,800 Optuna trials over the fourteen free axes of Bhatti's VWAP-EMA spec (SSRN 6650958), run on
+// the RESEARCH BLOCK ONLY of US100_LONG_15m and US30_LONG_15m. The search itself supplied one of
+// each: all three US30 finalists came back LONG and all three US100 finalists came back SHORT.
+//   BEST LONG  = US30 total-R finalist. The only one of the six positive on the reserved forward
+//                block (US30_ISO, a different provider, 2024-08..2026-08: +0.157 R, PF 1.311,
+//                n 325), and positive on US100 as a frozen cross-market read (p 0.047).
+//   BEST SHORT = US100 total-R finalist. US100's PF finalist reads a higher locked R (+0.121 vs
+//                +0.078) on 62 trades against 244 and then -0.504 on the forward block against
+//                -0.104, so the LARGER SAMPLE is shipped as the default and the PF cell is offered
+//                as the alternate.
+//
+// ============================ WHAT THE PAIR ACTUALLY DID ============================
+// One position at a time -- which is what this script is. Zero cost is NOT assumed; US100 is
+// charged 0.75 points a side and US30 1.50, plus 0.10 slippage a side.
+//
+//   US100    research  n 1334  +0.1784 R  PF 1.295  ret/DD 5.87   ->  LOCKED  n 828  +0.0057  PF 1.010
+//   US30     research  n 1058  +0.2193 R  PF 1.370  ret/DD 3.95   ->  LOCKED  n 610  -0.0497  PF 0.913
+//   US30_ISO reserved forward block, read once:    n 500  +0.0494 R  PF 1.091  ret/DD 0.62
+//
+// THE PAIR CLEARS A MATCHED RANDOM ENTRY ON BOTH RESEARCH BLOCKS AT p 0.000 AND ON NEITHER LOCKED
+// BLOCK (p 0.392 / 0.388), and the day-block bootstrap goes 0.006 -> 0.520 and 0.058 -> 0.853.
+// On the forward block p 0.176, bootstrap 0.446. Deflated Sharpe of every component is BELOW
+// E[max Sharpe | pure noise] = 0.289 at the counted 4,840 trials.
+//
+// EACH SIDE ONLY WORKS ON THE MARKET THAT CHOSE IT, which is the clearest single warning here:
+//   the LONG cell   locked  US30 +0.0444  |  US100 -0.0024
+//   the SHORT cell  locked  US100 +0.0783 |  US30  -0.2005
+//
+// ============================ THE PROFILE, BEFORE THE P&L ============================
+// Median hold 4-5 bars. Exits 39% initial stop, 51% trail, 10% flatten/end. 63-70% of trades are
+// long. THE TOP 5% OF TRADES SUPPLY 370-657% OF NET R -- the other 95% lose in aggregate, so this
+// is a tail-dependent book and a run of stopped trades is the normal state, not a malfunction.
+// 2025 is NEGATIVE on both feeds (-0.206 and -0.282 R) and it is the most recent full year.
+//
+// ============================ THREE MECHANICS WORTH KNOWING ============================
+//  * THE TWO SIDES NEVER FIRE ON THE SAME BAR -- measured, 0 bars in 449,303 across three feeds --
+//    so the tie-break input below is a safety net that never binds, and the position lock costs
+//    only 2-3% of the trades (n_kept 0.965-0.989 against running the two sides on two charts).
+//  * TWO CHARTS IS A DIFFERENT BOOK. Running the long on one chart and the short on another is a
+//    larger position and needs the margin for both. Do not read a two-chart result off this one.
+//  * THE SIDES USE DIFFERENT SESSIONS AND DIFFERENT FLATTENS, because the search chose them
+//    separately: the long trades the literal 13:30-20:00 UTC window and holds overnight; the short
+//    trades 09:30-16:00 New York and flattens at the close.
+//
+// ============================ PARITY -- THIS SCRIPT'S OWN ORDER MODEL vs THE RESEARCH ==========
+// `research/vwapema/two_sided_parity.py` writes this script's order model out in Python and diffs
+// it against the engine on identical bars. Trade-count ratio 0.982-0.989, R correlation
+// 0.996-0.9996, and the per-trade gap is CONSERVATIVE on four of five blocks (-3.4% and -9.3% on
+// the two research blocks) -- the right direction. Only 38-40% of exits land on the SAME BAR,
+// because `strategy.close()` fills at the NEXT bar's open where the research exits at the
+// breaching close; that is the irreducible difference and it is why a tester report will not match
+// the research to the tick. Note the locked-block gap percentages are meaningless: the base is
+// +0.0057 R, so any small absolute difference is a large ratio.
+//
+// COMMISSION AND SLIPPAGE ARE NOT SET HERE. Set them in Properties before reading any report.
+// CHECK THE HUD's corr(volume, bar range) CELL: near zero means your feed's volume column is not
+// volume, and both sides' C5 condition then means nothing.
+
+strategy("VWAP-EMA Two-Sided", shorttitle = "VE 2S", overlay = true, pyramiding = 0, initial_capital = 50000, default_qty_type = strategy.fixed, default_qty_value = 1, calc_on_every_tick = false, process_orders_on_close = false)
+
+// ------------------------------------------------------------------ inputs
+gS = "Sides"
+useLong  = input.bool(true,  "Long side   (US30 total-R cell)", group = gS)
+useShort = input.bool(true,  "Short side  (US100 total-R cell)", group = gS)
+shortAlt = input.bool(false, "Use the US100 PF cell for the short instead", group = gS, tooltip = "Higher locked R (+0.121 vs +0.078) on 62 trades against 244, and -0.504 R on the reserved forward block against -0.104. The larger sample ships as the default.")
+longFirst = input.bool(true, "If both sides fire on one bar, take the long", group = gS, tooltip = "Measured over three feeds and 449,303 bars, the two sides never fire on the same bar. This input has never bound.")
+
+gL = "Long side — override (blank = the searched values)"
+oL       = input.bool(false, "Override the long parameters", group = gL)
+lEmaSlow = input.int(220, "EMA regime", minval = 5, group = gL)
+lEmaPull = input.int(12,  "EMA pullback / trail", minval = 2, group = gL)
+lEmaTgt  = input.int(55,  "EMA final-leg trail", minval = 2, group = gL)
+lAtrLen  = input.int(19,  "ATR length", minval = 2, group = gL)
+lAtrStop = input.float(0.189594, "Initial stop (x ATR)", minval = 0.02, step = 0.01, group = gL)
+lVolM    = input.float(0.879226, "C5 volume multiple", minval = 0.0, step = 0.05, group = gL)
+lRngM    = input.float(0.806800, "C6 range floor (x ATR)", minval = 0.0, step = 0.05, group = gL)
+lWick    = input.float(2.034242, "C4a wick/body ratio", minval = 0.5, step = 0.1, group = gL)
+lAmbig   = input.float(0.001580, "Regime ambiguity band", minval = 0.0, step = 0.0002, group = gL)
+lTight   = input.float(0.565246, "Switch to the fast EMA above this floating R", minval = 0.0, step = 0.1, group = gL)
+
+gH = "Short side — override (blank = the searched values)"
+oS       = input.bool(false, "Override the short parameters", group = gH)
+sEmaSlow = input.int(60,  "EMA regime", minval = 5, group = gH)
+sEmaPull = input.int(118, "EMA pullback / trail", minval = 2, group = gH)
+sEmaTgt  = input.int(60,  "EMA final-leg trail", minval = 2, group = gH)
+sAtrLen  = input.int(21,  "ATR length", minval = 2, group = gH)
+sAtrStop = input.float(0.179570, "Initial stop (x ATR)", minval = 0.02, step = 0.01, group = gH)
+sVolM    = input.float(1.267722, "C5 volume multiple", minval = 0.0, step = 0.05, group = gH)
+sRngM    = input.float(1.249826, "C6 range floor (x ATR)", minval = 0.0, step = 0.05, group = gH)
+sWick    = input.float(2.793274, "C4a wick/body ratio", minval = 0.5, step = 0.1, group = gH)
+sAmbig   = input.float(0.000347, "Regime ambiguity band", minval = 0.0, step = 0.0002, group = gH)
+sTight   = input.float(1.410162, "Switch to the fast EMA above this floating R", minval = 0.0, step = 0.1, group = gH)
+
+gD = "Display"
+showLv = input.bool(true, "Plot the VWAPs and the two trails", group = gD)
+
+// ------------------------------------------------------------------ resolved parameters
+// NO TAKE PROFIT on either side. All six finalists chose that independently, and it is the
+// twenty-first time no-target has won on this branch.
+LemaSlow = oL ? lEmaSlow : 220
+LemaPull = oL ? lEmaPull : 12
+LemaTgt  = oL ? lEmaTgt  : 55
+LatrLen  = oL ? lAtrLen  : 19
+LatrStop = oL ? lAtrStop : 0.189594
+LvolM    = oL ? lVolM    : 0.879226
+LrngM    = oL ? lRngM    : 0.806800
+Lwick    = oL ? lWick    : 2.034242
+Lambig   = oL ? lAmbig   : 0.001580
+Ltight   = oL ? lTight   : 0.565246
+
+SemaSlow = oS ? sEmaSlow : shortAlt ? 70  : 60
+SemaPull = oS ? sEmaPull : shortAlt ? 120 : 118
+SemaTgt  = oS ? sEmaTgt  : shortAlt ? 25  : 60
+SatrLen  = oS ? sAtrLen  : shortAlt ? 8   : 21
+SatrStop = oS ? sAtrStop : shortAlt ? 0.210194 : 0.179570
+SvolM    = oS ? sVolM    : shortAlt ? 2.283419 : 1.267722
+SrngM    = oS ? sRngM    : shortAlt ? 0.346055 : 1.249826
+Swick    = oS ? sWick    : shortAlt ? 2.030377 : 2.793274
+Sambig   = oS ? sAmbig   : shortAlt ? 0.002855 : 0.000347
+Stight   = oS ? sTight   : shortAlt ? 1.340359 : 1.410162
+
+// ------------------------------------------------------------------ clock
+// The long cell trades the literal 13:30-20:00 UTC window the paper names; the short cell trades
+// 09:30-16:00 New York. The search chose those separately and they are NOT the same window --
+// 13:30 UTC is 09:30 New York only under daylight saving, and 08:30 in winter.
+TZ = "America/New_York"
+nyMin  = hour(time, TZ) * 60 + minute(time, TZ)
+utcMin = hour(time, "UTC") * 60 + minute(time, "UTC")
+nyDow  = dayofweek(time, TZ)
+wkday  = nyDow != dayofweek.saturday and nyDow != dayofweek.sunday
+inUtc  = wkday and utcMin >= 810 and utcMin < 1200
+inNy   = wkday and nyMin >= 570 and nyMin < 960
+tfMin  = timeframe.in_seconds() / 60
+lastNy = inNy and not (nyMin + tfMin < 960)
+
+// ------------------------------------------------------------------ indicators
+// ta.atr is Wilder's; the research uses ema(tr, n). This matches the research.
+atrL = ta.ema(ta.tr(true), LatrLen)
+atrS = ta.ema(ta.tr(true), SatrLen)
+Le200 = ta.ema(close, LemaSlow)
+Le50  = ta.ema(close, LemaPull)
+Le20  = ta.ema(close, LemaTgt)
+Se200 = ta.ema(close, SemaSlow)
+Se50  = ta.ema(close, SemaPull)
+Se20  = ta.ema(close, SemaTgt)
+
+// each side accumulates its OWN session VWAP, because the two sessions differ
+var float pvU = 0.0
+var float vvU = 0.0
+var float pvN = 0.0
+var float vvN = 0.0
+if barstate.isconfirmed
+    if inUtc and not inUtc[1]
+        pvU := 0.0
+        vvU := 0.0
+    if inNy and not inNy[1]
+        pvN := 0.0
+        vvN := 0.0
+    if inUtc
+        pvU := pvU + ((high + low + close) / 3.0) * volume
+        vvU := vvU + volume
+    if inNy
+        pvN := pvN + ((high + low + close) / 3.0) * volume
+        vvN := vvN + volume
+vwapU = vvU > 0 ? pvU / vvU : na
+vwapN = vvN > 0 ? pvN / vvN : na
+
+// ------------------------------------------------------------------ the six conditions, per side
+body = math.abs(close - open)
+lw   = math.min(open, close) - low
+uw   = high - math.max(open, close)
+vsma = ta.sma(volume, 20)
+
+lAmb = math.abs(close - Le200) / math.max(Le200, 1e-9) < Lambig
+lC1 = close > Le200
+lC2 = not na(vwapU) and close > vwapU
+lC3 = math.min(low, low[1]) <= Le50 and Le50 <= close
+lC4 = (lw >= Lwick * body and uw <= 0.5 * lw) or (close > open[1] and open < close[1])
+lC5 = volume > LvolM * vsma
+lC6 = (high - low) >= LrngM * atrL
+longSig = useLong and inUtc and lC1 and lC2 and lC3 and lC4 and lC5 and lC6 and not lAmb
+
+sAmb = math.abs(close - Se200) / math.max(Se200, 1e-9) < Sambig
+sC1 = close < Se200
+sC2 = not na(vwapN) and close < vwapN
+sC3 = math.max(high, high[1]) >= Se50 and Se50 >= close
+sC4 = (uw >= Swick * body and lw <= 0.5 * uw) or (close < open[1] and open > close[1])
+sC5 = volume > SvolM * vsma
+sC6 = (high - low) >= SrngM * atrS
+shortSig = useShort and inNy and sC1 and sC2 and sC3 and sC4 and sC5 and sC6 and not sAmb
+
+// ------------------------------------------------------------------ orders
+// The exit-bar marker is updated BEFORE the entry test so a trade cannot re-enter on the bar it
+// closed on. The bracket is fill-relative and goes out WITH the entry, so the initial stop is live
+// on the fill bar.
+var int lastExitBar = -1
+var int nClosed = 0
+var float riskPts = na
+var bool  posIsLong = true
+if strategy.closedtrades != nClosed
+    nClosed := strategy.closedtrades
+    lastExitBar := bar_index
+
+canEnter = barstate.isconfirmed and strategy.position_size == 0 and bar_index != lastExitBar
+takeLong  = canEnter and longSig  and (not shortSig or longFirst) and not na(atrL) and atrL > 0
+takeShort = canEnter and shortSig and (not longSig  or not longFirst) and not na(atrS) and atrS > 0
+
+if takeLong
+    riskPts := close - (low - LatrStop * atrL)
+    ticks = math.round(math.max(riskPts, syminfo.mintick) / syminfo.mintick)
+    posIsLong := true
+    strategy.entry("L", strategy.long)
+    strategy.exit("Lx", from_entry = "L", loss = ticks)
+
+if takeShort
+    riskPts := (high + SatrStop * atrS) - close
+    ticks = math.round(math.max(riskPts, syminfo.mintick) / syminfo.mintick)
+    posIsLong := false
+    strategy.entry("S", strategy.short)
+    strategy.exit("Sx", from_entry = "S", loss = ticks)
+
+// The trail is CLOSE-ONLY and cannot act on the bar the position filled. Each side trails on its
+// OWN pair of EMAs. A script exits at the NEXT bar's open where the research exits at the
+// breaching close -- measured on this rule, that moves the exit bar on 63% of trades.
+floatR = strategy.position_size != 0 and riskPts > 0 ? (close - strategy.position_avg_price) * (strategy.position_size > 0 ? 1 : -1) / riskPts : 0.0
+trailL = floatR >= Ltight ? Le20 : Le50
+trailS = floatR >= Stight ? Se20 : Se50
+if barstate.isconfirmed and bar_index > lastExitBar
+    if strategy.position_size > 0 and close < trailL
+        strategy.close("L", comment = "trail")
+    if strategy.position_size < 0 and close > trailS
+        strategy.close("S", comment = "trail")
+
+// The SHORT cell flattens at the New York close; the LONG cell holds. That asymmetry is what the
+// search chose and removing it changes the strategy.
+if barstate.isconfirmed and lastNy and strategy.position_size < 0
+    strategy.close("S", comment = "session flat")
+
+// ------------------------------------------------------------------ plots
+plot(showLv and inUtc ? vwapU : na, "VWAP (long session, UTC)", color = color.new(#2a78d6, 0), linewidth = 2, style = plot.style_linebr)
+plot(showLv and inNy  ? vwapN : na, "VWAP (short session, NY)", color = color.new(#7a5cc7, 0), linewidth = 2, style = plot.style_linebr)
+plot(showLv ? Le50 : na, "long trail", color = color.new(#1baf7a, 0))
+plot(showLv ? Se50 : na, "short trail", color = color.new(#eb6834, 0))
+bgcolor(inUtc and inNy ? color.new(#8b929c, 93) : inUtc ? color.new(#2a78d6, 94) : inNy ? color.new(#7a5cc7, 94) : na)
+
+var table hud = table.new(position.top_right, 2, 5, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, "sides", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 0, (useLong ? "long " : "") + (useShort ? (shortAlt ? "short(PF cell)" : "short") : ""), text_size = size.tiny)
+    table.cell(hud, 0, 1, "long  stop / EMA", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 1, str.tostring(LatrStop, "#.###") + "N  " + str.tostring(LemaSlow) + "/" + str.tostring(LemaPull) + "  no target", text_size = size.tiny)
+    table.cell(hud, 0, 2, "short stop / EMA", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 2, str.tostring(SatrStop, "#.###") + "N  " + str.tostring(SemaSlow) + "/" + str.tostring(SemaPull) + "  no target", text_size = size.tiny)
+    table.cell(hud, 0, 3, "corr(volume, bar range)", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 3, str.tostring(ta.correlation(volume, high - low, 500), "#.###") + "  (near 0 = not volume)", text_size = size.tiny)
+    table.cell(hud, 0, 4, "locked control p", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 4, "0.392 US100 / 0.388 US30 -- clears neither", text_color = color.new(#eb6834, 0), text_size = size.tiny)

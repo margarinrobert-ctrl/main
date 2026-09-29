@@ -1,0 +1,36 @@
+V62 stage C -- the drop-one at the winning cell, and whether it is a spike.
+
+A cell that contains an MFI condition and an EMA condition is not evidence that either does
+anything: it is the top of 2,055,874 draws, and the population table in B3 says the top 100 of
+those land at -0.0300 on the locked block. The test that settles it is the DROP-ONE at that exact
+geometry -- remove the MFI, remove the EMA, remove both -- plus the one-rung neighbourhood.
+
+======================================================================================================================
+C1. DOES THE RESEARCH RANKING OF A CONFIRMATION SURVIVE? -- Spearman between the share
+    of matched pairs a condition helps on research and the share it helps on locked
+======================================================================================================================
+  MFI  15 conditions   Spearman -0.257   Pearson -0.128   research mean 57.8%  locked mean 49.2%
+  EMA  15 conditions   Spearman -0.618   Pearson -0.683   research mean 59.0%  locked mean 59.7%
+
+======================================================================================================================
+C2. DROP-ONE AT THE WINNING CELL -- the only test that says whether its two
+    confirmations are doing anything, rather than being carried by the geometry
+======================================================================================================================
+  best cell as found (MFI + EMA)               | res n  159 +0.1371 PF  2.28 ctl p 0.000 ent p 0.000 boot 0.000 | lock n   84 +0.1203 PF  1.68 ctl p 0.001 ent p 0.070 boot 0.040
+    drop the MFI                               | res n  204 +0.0783 PF  1.60 ctl p 0.000 ent p 0.003 boot 0.001 | lock n  116 +0.1025 PF  1.59 ctl p 0.003 ent p 0.065 boot 0.036
+    drop the EMA momentum                      | res n  169 +0.1307 PF  2.23 ctl p 0.000 ent p 0.000 boot 0.000 | lock n   92 +0.1080 PF  1.65 ctl p 0.002 ent p 0.100 boot 0.044
+    drop BOTH (geometry + CVD only)            | res n  222 +0.0676 PF  1.52 ctl p 0.000 ent p 0.004 boot 0.005 | lock n  128 +0.0978 PF  1.61 ctl p 0.005 ent p 0.061 boot 0.032
+    drop the CVD gate too                      | res n  921 +0.0073 PF  1.05 ctl p nan ent p 0.606 boot 0.277 | lock n  459 +0.0270 PF  1.15 ctl p nan ent p 0.179 boot 0.143
+  V61 incumbent                                | res n  157 +0.1203 PF  1.73 ctl p 0.000 ent p 0.000 boot 0.011 | lock n   87 +0.1371 PF  1.58 ctl p 0.010 ent p 0.205 boot 0.113
+
+======================================================================================================================
+C3. IS IT A SPIKE? -- one rung on every ordered axis, both blocks
+======================================================================================================================
+    ent=20           research +0.1301   locked +0.0918
+    exN=20           research +0.1428   locked +0.1453
+    stop=2.5         research +0.1109   locked +0.1339
+    tp=0.0           research +0.1856   locked +0.2620
+    tp=4.0           research +0.1364   locked +0.1366
+    mfi_n=9          research +0.1044   locked +0.0962
+    mfi_n=21         research +0.1191   locked +0.1731
+  7 neighbours: research 100% profitable (mean +0.1328), locked 100% (mean +0.1484)   the cell itself: research +0.1371 locked +0.1203

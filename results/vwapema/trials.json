@@ -1,0 +1,9 @@
+{
+ "trials": {
+  "conditions_dropone": 12,
+  "params_swept": 32,
+  "arms": 14,
+  "sides": 2
+ },
+ "total": 60
+}

@@ -1,0 +1,92 @@
+
+================================================================================================================================
+14. THE TWO CONTROLS ON THE MARKETS THAT CHOSE NOTHING
+================================================================================================================================
+
+   --- US30L  ($5/point)
+
+   TOP (best research PF)
+      rule                               n   130  PF  1.027  $/t   +13.23  win 0.362  Sh +0.03  DD $  15,585  ret/DD  0.11
+      SAME config, EMA REMOVED           n   522  PF  1.154  $/t   +65.66  win 0.412  Sh +0.34  DD $  18,703  ret/DD  1.83
+      matched control mean   +40.95  p95  +222.69   rule   +13.23   p = 0.606   FAILS
+      EMA contribution:   -52.43 $/trade   (130 trades against 522, -75%)   PF 1.027 vs 1.154
+
+   CONSENSUS (top-100 mode)
+      rule                               n   169  PF  1.058  $/t   +26.52  win 0.373  Sh +0.08  DD $  15,950  ret/DD  0.28
+      SAME config, EMA REMOVED           n   522  PF  1.154  $/t   +65.66  win 0.412  Sh +0.34  DD $  18,703  ret/DD  1.83
+      matched control mean   +46.03  p95  +219.99   rule   +26.52   p = 0.561   FAILS
+      EMA contribution:   -39.13 $/trade   (169 trades against 522, -68%)   PF 1.058 vs 1.154
+
+   THE BRIEF (EMA 13/48 fixed)
+      rule                               n   311  PF  1.249  $/t   +97.61  win 0.325  Sh +0.37  DD $  26,832  ret/DD  1.13
+      SAME config, EMA REMOVED           n   428  PF  1.280  $/t  +108.98  win 0.308  Sh +0.49  DD $  25,945  ret/DD  1.80
+      matched control mean   +62.28  p95  +193.86   rule   +97.61   p = 0.324   FAILS
+      EMA contribution:   -11.37 $/trade   (311 trades against 428, -27%)   PF 1.249 vs 1.280
+
+   --- US100L  ($2/point)
+
+   TOP (best research PF)
+      rule                               n   142  PF  1.526  $/t   +39.59  win 0.437  Sh +0.50  DD $   1,714  ret/DD  3.28
+      SAME config, EMA REMOVED           n   579  PF  1.175  $/t   +14.29  win 0.427  Sh +0.39  DD $   5,509  ret/DD  1.50
+      matched control mean    +6.01  p95   +41.44   rule   +39.59   p = 0.070   FAILS
+      EMA contribution:   +25.30 $/trade   (142 trades against 579, -75%)   PF 1.526 vs 1.175
+
+   CONSENSUS (top-100 mode)
+      rule                               n   179  PF  1.666  $/t   +50.59  win 0.441  Sh +0.65  DD $   1,311  ret/DD  6.90
+      SAME config, EMA REMOVED           n   579  PF  1.175  $/t   +14.29  win 0.427  Sh +0.39  DD $   5,509  ret/DD  1.50
+      matched control mean    +8.01  p95   +42.60   rule   +50.59   p = 0.035   CLEARS
+      EMA contribution:   +36.30 $/trade   (179 trades against 579, -69%)   PF 1.666 vs 1.175
+
+   THE BRIEF (EMA 13/48 fixed)
+      rule                               n   322  PF  1.532  $/t   +44.15  win 0.335  Sh +0.68  DD $   2,940  ret/DD  4.83
+      SAME config, EMA REMOVED           n   462  PF  1.334  $/t   +27.74  win 0.310  Sh +0.56  DD $   4,737  ret/DD  2.71
+      matched control mean   +11.82  p95   +41.41   rule   +44.15   p = 0.045   CLEARS
+      EMA contribution:   +16.41 $/trade   (322 trades against 462, -30%)   PF 1.532 vs 1.334
+
+================================================================================================================================
+VERDICT ON THE CONTROLS
+================================================================================================================================
+   cells clearing the matched control at p<=0.05: 2 of 6
+   cells where the EMA beats its own no-EMA twin: 3 of 6 (chance 50% = 3.0)
+   mean EMA contribution -4.15 $/trade
+
+================================================================================================================================
+15. VECTORBT -- an independently written engine on the same signals
+================================================================================================================================
+   vectorbt 1.1.0
+
+   US30L 60m -- TOP (best research PF)
+      my engine                  n   130  $/t    +13.23  net $     +1,720
+      vectorbt                   n   130  $/t   +303.50  net $    +39,455
+      trade-count ratio 1.000   SIGNAL SETS AGREE
+
+   US30L 60m -- CONSENSUS (top-100 mode)
+      my engine                  n   169  $/t    +26.52  net $     +4,482
+      vectorbt                   n   168  $/t   +301.26  net $    +50,611
+      trade-count ratio 0.994   SIGNAL SETS AGREE
+
+   US30L 60m -- THE BRIEF (EMA 13/48 fixed)
+      my engine                  n   311  $/t    +97.61  net $    +30,356
+      vectorbt                   n   284  $/t   +347.81  net $    +98,779
+      trade-count ratio 0.913   SIGNAL SETS AGREE
+
+   US100L 60m -- TOP (best research PF)
+      my engine                  n   142  $/t    +39.59  net $     +5,621
+      vectorbt                   n   141  $/t   +118.59  net $    +16,721
+      trade-count ratio 0.993   SIGNAL SETS AGREE
+
+   US100L 60m -- CONSENSUS (top-100 mode)
+      my engine                  n   179  $/t    +50.59  net $     +9,055
+      vectorbt                   n   177  $/t   +123.84  net $    +21,919
+      trade-count ratio 0.989   SIGNAL SETS AGREE
+
+   US100L 60m -- THE BRIEF (EMA 13/48 fixed)
+      my engine                  n   322  $/t    +44.15  net $    +14,216
+      vectorbt                   n   297  $/t   +109.32  net $    +32,468
+      trade-count ratio 0.922   SIGNAL SETS AGREE
+
+   The two engines share a signal definition and differ in how a stop and a channel
+   exit inside ONE bar are ordered: mine takes the stop, the pessimistic branch. A
+   matching COUNT with a different net is that convention; a mismatched count is a bug.
+
+   elapsed 41s

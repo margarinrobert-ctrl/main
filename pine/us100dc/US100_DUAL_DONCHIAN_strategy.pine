@@ -1,0 +1,131 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//@version=5
+
+// US100 M15 DUAL-DONCHIAN, LONG ONLY -- the supplied specification, built and run.
+//
+// SPEC AS GIVEN: US100, M15, entry Donchian 160, exit Donchian 60, ATR 80, ATR multiplier 1.5,
+// trailing ATR multiplier 2.0, long only, spread-to-ATR filter 0.20, deposit $1,000, 1:100.
+// Every default below is that number. It was then RUN on US100_LONG_15m -- 206,703 fifteen-minute
+// bars, 2016-11-14 to 2025-10-01, clock verified (mean bar range peaks at 09:30 New York) -- with
+// a 1.215-point all-in round turn and 0.25 points of slippage a side, research block to
+// 2022-08-30 and the locked block read once.
+//
+// ============================ THE RESULT, AS SPECIFIED ============================
+//                     trades   pts/trade   PF      win     Sharpe   total (1 unit)   max DD
+//   research           1,073     -1.57     0.863   35.8%   -0.59     -1,683 pts      1,965 pts
+//   LOCKED (once)        717     -2.19     0.880   34.6%   -0.66     -1,567 pts      2,210 pts
+// It loses on the block that would have chosen it and on the one read once. Against a matched
+// random entry -- same rate, same stop, same trail, same exits -- p 0.187 and 0.487, so it does
+// not beat a coin flip either, and the coin flip also loses.
+//
+// ============================ THE 2.0 x ATR TRAIL IS THE WHOLE RESULT ============================
+// Change nothing else and remove the trail:
+//                     trades   pts/trade   PF      win     Sharpe   hold
+//   stop 1.5N only, research     574     +8.06     1.405   24.4%   +0.78    13.7 h
+//   stop 1.5N only, LOCKED       388     +7.48     1.248   23.2%   +0.68    11.9 h
+// The axis is monotone: trail 1.5N -3.63, trail 2.0N (as specified) -1.57, trail 3.0N +1.37,
+// no trail +8.06 points a trade. Positive on both blocks and decaying across the split, which is
+// the right shape -- though it still does not clear its own random-entry control (p 0.113 / 0.310,
+// and that control earns +2.30 / +1.90 because a 1.5N stop plus a 60-bar channel exit on an index
+// that quadrupled is a drift harvester).
+//
+// ============================ AND THE EXIT DONCHIAN 60 IS DEAD CODE AS SPECIFIED ==================
+// With the 2.0 x ATR trail on, the trail or the stop closes 100.0% of trades and the 60-bar exit
+// channel closes 0.0%. The trail sits inside the channel on every trade, so the specification's
+// exit period never gets to act. Remove the trail and the channel takes 28.2% of exits and the
+// median hold goes from 3.1 hours to 13.7. If the exit Donchian is meant to be the exit, the
+// trail has to be off or much wider than 2.0 x ATR(80).
+//
+// ============================ THE SPREAD-TO-ATR FILTER IS INERT, AND IT IS AN ASSUMPTION =========
+// No feed on this branch carries bid/ask, so `spread / ATR <= 0.20` cannot be evaluated as
+// written. With a FIXED spread it is exactly an ATR FLOOR: spread/ATR <= 0.20 is ATR >= 5 x
+// spread. Swept: a 1-point spread keeps 91% of bars and moves the result by 0.01 points a trade;
+// a 2-point spread keeps 74% and moves it by -0.35. It is not doing the work either way, and its
+// strength is set by a number nobody measured. That is why it is exposed here as the spread in
+// points rather than hidden behind the ratio.
+//
+// ============================ THE $1,000 ACCOUNT AT 1:100 ============================
+// At $1 a point, one unit needs $93 of margin at the 2016-2022 index level and $180 at the
+// 2022-2025 level, so the deposit affords 5 to 11 units. It does not matter: ONE unit loses
+// 1,683 points on the research block against a $1,000 deposit, with a 1,965-point drawdown. The
+// leverage is not the binding constraint -- the sign of the expectancy is. Sizing up multiplies
+// a negative number.
+//
+// COMMISSION AND SLIPPAGE ARE NOT SET IN THIS DECLARATION. Set them in Properties; the figures
+// above already include 1.215 points a round turn plus 0.25 a side.
+
+strategy("US100 Dual-Donchian (spec)", shorttitle = "US100 DC", overlay = true, pyramiding = 0, initial_capital = 1000, default_qty_type = strategy.fixed, default_qty_value = 1, calc_on_every_tick = false, process_orders_on_close = false)
+
+gE = "Entry / exit channels"
+entryLen = input.int(160, "Entry Donchian period", minval = 2, group = gE)
+exitLen  = input.int(60, "Exit Donchian period", minval = 2, group = gE, tooltip = "As specified this never fires: the 2.0 x ATR trail is inside it on 100.0% of trades. Widen or disable the trail to give it something to do.")
+useExitCh = input.bool(true, "Use the exit channel", group = gE)
+
+gA = "ATR risk"
+atrLen   = input.int(80, "ATR period", minval = 1, group = gA)
+atrMult  = input.float(1.5, "ATR multiplier (initial stop)", step = 0.1, minval = 0.1, group = gA)
+useTrail = input.bool(true, "Trailing stop", group = gA, tooltip = "ON is the specification. Measured: OFF takes the research block from -1.57 to +8.06 points a trade and the locked block from -2.19 to +7.48, changing nothing else.")
+trailMult = input.float(2.0, "Trailing ATR multiplier", step = 0.1, minval = 0.1, group = gA)
+
+gF = "Spread-to-ATR filter"
+useSpread = input.bool(true, "Apply the spread-to-ATR filter", group = gF)
+spreadPts = input.float(1.0, "Assumed spread, in points", step = 0.1, minval = 0.0, group = gF, tooltip = "The filter needs a spread and no historical feed supplies one. With a fixed spread, spread/ATR <= ratio IS an ATR floor of spread/ratio, which is what this computes.")
+spreadRatio = input.float(0.20, "Spread-to-ATR ratio", step = 0.01, minval = 0.01, group = gF)
+
+showHUD = input.bool(true, "Show the panel", group = gF)
+
+// ------------------------------------------------------------------ indicators
+// Pine's ta.atr is Wilder's RMA of true range, which is what the specification's "ATR Period 80"
+// means on a TradingView chart.
+atr = ta.atr(atrLen)
+// [1] on both channels: the level must be formed by the PREVIOUS bars, or the breakout bar's own
+// high is the level it has to exceed and the rule can never fire.
+upper = ta.highest(high, entryLen)[1]
+lower = ta.lowest(low, exitLen)[1]
+
+atrFloor = useSpread and spreadRatio > 0 ? spreadPts / spreadRatio : 0.0
+gateOk = not useSpread or atr >= atrFloor
+
+longSig = not na(upper) and close > upper and gateOk and not na(atr) and atr > 0
+
+// ------------------------------------------------------------------ orders
+// The bracket goes out WITH the entry so the position is protected on its own fill bar. The
+// exit-bar marker updates BEFORE the entry test so a trade cannot re-enter on the bar it closed on.
+var int lastExitBar = -1
+var int nClosed = 0
+var float entAtr = na
+if strategy.closedtrades != nClosed
+    nClosed := strategy.closedtrades
+    lastExitBar := bar_index
+
+canEnter = barstate.isconfirmed and strategy.position_size == 0 and bar_index != lastExitBar
+
+if canEnter and longSig
+    entAtr := atr
+    ticks = math.round(atrMult * atr / syminfo.mintick)
+    strategy.entry("L", strategy.long)
+    strategy.exit("L-EXIT", from_entry = "L", loss = ticks, trail_price = useTrail ? close : na, trail_offset = useTrail ? math.round(trailMult * atr / syminfo.mintick) : na)
+
+// The exit channel is a CLOSE-based rule, so it cannot act on the bar the position filled: it is
+// checked from the following bar onward and fills at the next open, which is what a script can
+// actually do.
+if barstate.isconfirmed and useExitCh and strategy.position_size > 0 and bar_index > lastExitBar and not na(lower) and close < lower
+    strategy.close("L", comment = "exit channel")
+
+// ------------------------------------------------------------------ plots
+plot(upper, "Entry channel", color = color.new(#1baf7a, 0), linewidth = 2)
+plot(lower, "Exit channel", color = color.new(#eb6834, 0), linewidth = 2)
+bgcolor(gateOk ? na : color.new(#c0392b, 92))
+
+var table hud = table.new(position.top_right, 2, 5, border_width = 1)
+if showHUD and barstate.islast
+    table.cell(hud, 0, 0, "as specified", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 0, "research PF 0.863 / locked PF 0.880 — loses on both", text_color = color.new(#c0392b, 0), text_size = size.tiny)
+    table.cell(hud, 0, 1, "with the trail OFF", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 1, "research PF 1.405 / locked PF 1.248, +8.06 / +7.48 pts", text_color = color.new(#1baf7a, 0), text_size = size.tiny)
+    table.cell(hud, 0, 2, "exit channel share of exits", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 2, useTrail ? "0.0% — the trail pre-empts it on every trade" : "28.2%", text_size = size.tiny)
+    table.cell(hud, 0, 3, "spread filter", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 3, useSpread ? "ATR floor " + str.tostring(atrFloor, "#.#") + " pts (ATR now " + str.tostring(atr, "#.#") + ")" : "off", text_size = size.tiny)
+    table.cell(hud, 0, 4, "vs a matched random entry", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 4, "p 0.187 / 0.487 as specified — does not clear", text_color = color.new(#eb6834, 0), text_size = size.tiny)

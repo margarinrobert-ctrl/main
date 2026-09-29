@@ -1,0 +1,29 @@
+{
+  "tie_share": 0.29211272760545337,
+  "strict": {
+    "reading": "STRICT  open <  prev close  (the script as written)",
+    "signals": 727,
+    "c4b_pass": 17.323525763950503,
+    "n_res": 378,
+    "R_res": -0.044737140399948874,
+    "pf_res": 0.9156344713371647,
+    "totR_res": -16.910639071180675,
+    "n_lck": 214,
+    "R_lck": 0.14230500314214972,
+    "pf_lck": 1.3176970906722665,
+    "totR_lck": 30.45327067242004
+  },
+  "touch": {
+    "reading": "TOUCH   open <= prev close  (any feed with a gap)",
+    "signals": 1090,
+    "c4b_pass": 31.330795577053337,
+    "n_res": 524,
+    "R_res": -0.04647122460652244,
+    "pf_res": 0.9133803535407795,
+    "totR_res": -24.35092169381776,
+    "n_lck": 288,
+    "R_lck": 0.09817101893824681,
+    "pf_lck": 1.2082798228532015,
+    "totR_lck": 28.273253454215084
+  }
+}

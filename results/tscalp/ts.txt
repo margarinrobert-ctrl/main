@@ -1,0 +1,111 @@
+
+==============================================================================================================================
+A. BASE RATES -- what each gate passes on the DONCHIAN SIGNAL BARS against all bars (lift), research
+==============================================================================================================================
+  signal bars in the window on research: 3,650
+                              gate  on signal bars  on all bars    lift
+                      EMA150 above           85.8%        59.0%    1.46x
+          EMA150 support (<=3 ATR)           28.7%        25.4%    1.13x
+                   20>50>200 state           58.3%        45.1%    1.29x
+       fresh 20/50 cross <=5, >200            6.6%         2.2%    3.01x
+         pullback: low<=EMA20 in 3           45.8%        69.5%    0.66x
+         pullback: low<=EMA20 in 5           62.4%        75.6%    0.83x
+        pullback: low<=EMA20 in 10           79.4%        84.9%    0.94x
+  A gate near 100% on signal bars is the breakout restated (RSI 94.7%, Aroon 100%, MACD 99.8% here before).
+
+==============================================================================================================================
+B. THE DECLARED GRID -- ema150 x cross x pullback(window); research; read by MARGINAL AVERAGE
+==============================================================================================================================
+  35 scorable cells; share PF>1 85.7%; median R/trade +0.0089; base (all off) R +0.1047
+     ema150: above: R -0.0096 PF 1.172 Sh 0.72 n~467   off: R -0.0259 PF 1.123 Sh 0.49 n~518   support: R +0.0279 PF 1.301 Sh 0.93 n~190
+      cross: fresh: R -0.1195 PF 1.337 Sh 0.89 n~74   off: R +0.0344 PF 1.118 Sh 0.55 n~709   state: R +0.0653 PF 1.143 Sh 0.71 n~382
+   pullback: 3: R -0.0209 PF 1.031 Sh 0.06 n~338   5: R +0.0021 PF 1.343 Sh 1.01 n~356   10: R -0.0129 PF 1.186 Sh 0.80 n~410   off: R +0.0162 PF 1.205 Sh 0.89 n~478
+
+  top 6 by R/trade (max of many draws -- shape only):
+ ema150 cross pullback   n        R       pf       win   sharpe          dd
+support fresh        5  33 0.323645 2.691736 45.454545 3.938300  360.078605
+    off state      off 670 0.189831 1.240916 40.895522 1.231461 2878.747936
+  above state      off 670 0.189831 1.240916 40.895522 1.231461 2878.747936
+  above   off      off 990 0.173708 1.224128 40.101010 1.119234 4007.398036
+  above state       10 544 0.129194 1.242510 40.808824 1.162049 1709.678427
+    off state       10 544 0.129194 1.242510 40.808824 1.162049 1709.678427
+
+==============================================================================================================================
+C. THE ASK -- EMA150 trend + 20/50 cross aligned with 200 + pullback to EMA20 then the Donchian; research
+==============================================================================================================================
+                                                               n  R/trade     PF  win%  pts/tr     $ 1u   maxDD Sharpe  exits
+  script as shipped (no EMA gates)                          1145   0.1047  1.080  38.6    5.39    6,166   4,937   0.43  stop46% flat38% target15%
+  the ask (cross as STATE 20>50>200)                         465   0.0307  1.162  39.8    9.66    4,491   1,759   0.76  stop45% flat43% target13%
+  the ask (cross as FRESH <=5 bars, 20>200)                   79  -0.1620  1.428  41.8   24.99    1,974   1,373   1.31  flat58% stop37% target5%
+  drop-one from the state version:
+    - no EMA150                                              466   0.0376  1.170  39.9   10.10    4,706   1,759   0.80  stop45% flat43% target13%
+    - no cross                                               733   0.0089  1.104  38.7    6.47    4,742   3,181   0.50  flat44% stop44% target12%
+    - no pullback                                            670   0.1898  1.241  40.9   13.94    9,340   2,879   1.23  stop46% flat38% target17%
+  each gate ALONE on the script:
+    EMA150 above only                                        990   0.1737  1.224  40.1   13.38   13,244   4,007   1.12  stop45% flat40% target15%
+    EMA150 support only                                      435  -0.0034  1.145  38.9   10.03    4,362   3,652   0.67  stop46% flat43% target11%
+    20>50>200 state only                                     670   0.1898  1.241  40.9   13.94    9,340   2,879   1.23  stop46% flat38% target17%
+    fresh cross only                                         109  -0.2592  1.156  39.4    9.99    1,089   2,025   0.60  flat49% stop45% target6%
+    pullback(5) only                                         885  -0.0388  0.981  38.0   -1.36   -1,208   7,087  -0.10  stop45% flat43% target12%
+  the script's own exit switches on the ask (state):
+    ask + channel exit ON                                    471  -0.0290  1.115  37.6    6.70    3,155   2,363   0.55  stop48% flat40% target12%
+    ask + NO take profit                                     455   0.1270  1.213  38.0   13.04    5,932   2,089   0.94  flat53% stop47%
+    ask + one unit (no pyramid)                              461   0.0445  1.246  48.2    6.43    2,965     908   1.24  flat49% stop37% target14%
+    ask + no flatten (hold past 11:00)                       453   0.2648  1.271  30.9   27.54   12,478   4,471   1.29  stop69% target31%
+    ask, zero cost                                           467   0.2138  1.306  42.2   17.37    8,110   1,718   1.35  flat43% stop43% target13%
+    ask, 2x cost                                             471  -0.1721  1.001  36.5    0.04       17   3,355   0.00  stop46% flat42% target12%
+
+==============================================================================================================================
+D. CONTROL on research -- a RANDOM FILTER of the same selectivity (keep as many signal bars at random)
+==============================================================================================================================
+  script as shipped        n= 1145 R +0.1047 PF 1.080  (the base every filter is scored against)
+  EMA150 above             n=  990 R +0.1737 PF 1.224 | random FILTER of same selectivity: median +0.1031 5-95% [+0.0646, +0.1368]  p 0.000
+  20>50>200 state          n=  670 R +0.1898 PF 1.241 | random FILTER of same selectivity: median +0.0976 5-95% [+0.0324, +0.1616]  p 0.000
+  pullback(5)              n=  885 R -0.0388 PF 0.981 | random FILTER of same selectivity: median +0.0999 5-95% [+0.0383, +0.1545]  p 1.000
+  THE ASK (state)          n=  465 R +0.0307 PF 1.162 | random FILTER of same selectivity: median +0.0896 5-95% [-0.0108, +0.1967]  p 0.837
+  THE ASK (fresh)          n=   79 R -0.1620 PF 1.428 | random FILTER of same selectivity: median +0.1065 5-95% [-0.2383, +0.4235]  p 0.893
+
+==============================================================================================================================
+E. CROSS-MARKET -- the same gates, frozen, on NQ 15m and US100 15m (chose nothing)
+==============================================================================================================================
+                                                               n  R/trade     PF  win%  pts/tr     $ 1u   maxDD Sharpe  exits
+    US100 [research] script as shipped                      1284  -0.0710  0.957  35.5   -1.26   -1,615   3,732  -0.25  stop50% flat36% target14%
+    US100 [research] the ask (state)                         571  -0.1020  1.058  37.1    1.31      750   1,645   0.31  stop47% flat40% target13%
+    US100 [validation] script as shipped                     510  -0.0799  0.968  34.1   -2.03   -1,033   4,325  -0.23  stop54% flat31% target15%
+    US100 [validation] the ask (state)                       213   0.0693  1.151  36.6    7.86    1,674   2,507   0.96  stop53% flat31% target16%
+    US100 [test] script as shipped                           494  -0.0802  1.016  35.2    0.95      471   5,671   0.11  stop52% flat34% target14%
+    US100 [test] the ask (state)                             227  -0.3161  0.844  33.0   -9.10   -2,066   3,030  -1.02  stop55% flat33% target12%
+    NQ [research] script as shipped                          534  -0.1893  0.866  33.5   -8.19   -4,374   5,569  -1.02  stop56% flat29% target15%
+    NQ [research] the ask (state)                            252  -0.3349  0.782  34.5  -12.93   -3,259   4,512  -1.70  stop56% flat29% target14%
+    NQ [locked] script as shipped                            277   0.2097  1.209  40.4   13.64    3,778   2,278   1.28  stop47% flat37% target16%
+    NQ [locked] the ask (state)                              116  -0.1671  0.923  35.3   -5.36     -622   3,338  -0.47  stop55% flat31% target14%
+
+==============================================================================================================================
+F. MONTE CARLO on research -- the ask (state) beside the base
+==============================================================================================================================
+  script as shipped: n 1145, total +6,166 pts
+     execution (slip U(0,2x), fee U(0.5x,2x)):  total p5 -657 p50 +5,236 p95 +10,507  P(total>0) 0.913
+     price jitter 1 tick, indicators RECOMPUTED: total p5 +4,185 p50 +4,930 p95 +5,944  P(total>0) 1.000
+     day-block bootstrap: mean +5.385 pts  95% CI [-6.949, +17.618]  P(mean<=0) 0.198
+     permutation: realised DD 4,937  MC p50 5,874  p95 9,115  p99 10,913  realised pctile 0.24
+     concentration: top 5% of trades = +545% of net
+  THE ASK (state): n 465, total +4,491 pts
+     execution (slip U(0,2x), fee U(0.5x,2x)):  total p5 +853 p50 +4,084 p95 +6,559  P(total>0) 1.000
+     price jitter 1 tick, indicators RECOMPUTED: total p5 +3,939 p50 +4,371 p95 +4,759  P(total>0) 1.000
+     day-block bootstrap: mean +9.659 pts  95% CI [-9.322, +30.359]  P(mean<=0) 0.163
+     permutation: realised DD 1,759  MC p50 3,247  p95 5,136  p99 6,034  realised pctile 0.00
+     concentration: top 5% of trades = +305% of net
+
+==============================================================================================================================
+G. ONE LOCKED READ (validation 2022-23 + test 2024+) -- pre-declared cells only
+==============================================================================================================================
+                                                               n  R/trade     PF  win%  pts/tr     $ 1u   maxDD Sharpe  exits
+    script as shipped [locked, pooled]                       899   0.0176  1.056  34.1    5.36    4,820   8,877   0.36  stop52% flat32% target16%
+      validation                                             481   0.0662  1.123  35.3   11.62    5,591   3,073   0.74  stop50% flat34% target16%
+      test                                                   418  -0.0384  0.981  32.8   -1.84     -771   8,730  -0.14  stop54% flat30% target17%
+    the ask (state) [locked, pooled]                         371  -0.0329  0.949  34.2   -4.59   -1,705   5,779  -0.34  stop52% flat33% target15%
+      validation                                             192   0.0824  1.066  37.5    5.74    1,102   3,424   0.40  stop47% flat39% target15%
+      test                                                   179  -0.1565  0.831  30.7  -15.68   -2,807   4,853  -1.27  stop58% flat27% target15%
+    the ask (fresh) [locked, pooled]                          80  -0.0978  0.894  36.2   -9.00     -720   1,982  -0.67  flat48% stop42% target10%
+      validation                                              36  -0.2333  0.808  38.9  -14.98     -539   1,033  -1.18  flat58% stop36% target6%
+      test                                                    44   0.0130  0.955  34.1   -4.11     -181   1,393  -0.29  stop48% flat39% target14%

@@ -1,0 +1,84 @@
+THE DECISIVE ABLATION: is it the CVD, or is it just that a confirmed pivot happened recently?
+
+Every one of the four patterns is "a confirmed swing point occurred in the last w bars AND the CVD
+comparison at that pivot pointed a particular way". Two facts from part 2 say the second half may be
+doing nothing:
+
+  * on a LONG-only base the BEARISH patterns beat the BULLISH ones by 11x (+0.108 vs +0.009), and
+    ABSORBED BUYING -- the most bearish of the four, and the ONLY row negative on both blocks when
+    STUDY_V54 measured this on NQ -- is the BEST pattern here;
+  * all four are positive on all three gold blocks.
+
+A condition that works whichever way its own directional test points is not that directional test.
+So this file strips the CVD out and keeps everything else:
+
+  A  the pattern as specified                    pivot + CVD comparison
+  B  ANY of the four patterns                    pivot + any CVD comparison
+  C  PIVOT ONLY, no CVD at all                   "a confirmed swing low occurred in the last w bars"
+  D  pivot + a COIN-FLIP standing in for the CVD comparison, at the same firing rate
+
+If C matches A, the CVD contributes nothing and the family is a pivot-recency filter wearing an
+order-flow name. D is the same question asked with the selectivity held exactly fixed.
+
+
+============================================================================================================================
+THE ABLATION -- mean research (A+B) edge and mean block-C edge, pooled over k, w and timeframe
+============================================================================================================================
+                                     cells      keep  mean_edge       pos    mean_C     pos_C
+arm                                                                                          
+A  absorbed_buying   (as specified)     36    0.3166     0.1224   88.8889   -0.0392   50.0000
+A  exhausted_sellers (as specified)     35    0.3133     0.0660   82.8571   -0.0790   60.0000
+B  ANY of the four patterns             35    0.6816     0.0642   88.5714   -0.1319   53.3333
+C  ANY PIVOT only, no CVD                5    0.9173     0.0167   80.0000    0.0152   50.0000
+C  PIVOT LOW only, no CVD               12    0.8670     0.0027   58.3333   -0.0266   40.0000
+
+============================================================================================================================
+THE SAME, SPLIT BY TIMEFRAME (60m = 4 sub-bars a chart bar, 240m = 16)
+============================================================================================================================
+
+  60m
+                                        cells      keep  mean_edge
+   arm                                                            
+   A  absorbed_buying   (as specified)     18    0.3027     0.0601
+   A  exhausted_sellers (as specified)     18    0.2803     0.0520
+   B  ANY of the four patterns             18    0.6757     0.0275
+   C  ANY PIVOT only, no CVD                4    0.9197     0.0041
+   C  PIVOT LOW only, no CVD                8    0.8612    -0.0014
+
+  240m
+                                        cells      keep  mean_edge
+   arm                                                            
+   A  absorbed_buying   (as specified)     18    0.3305     0.1847
+   A  exhausted_sellers (as specified)     17    0.3483     0.0808
+   B  ANY of the four patterns             17    0.6880     0.1031
+   C  ANY PIVOT only, no CVD                1    0.9077     0.0672
+   C  PIVOT LOW only, no CVD                4    0.8788     0.0108
+
+============================================================================================================================
+MATCHED HEAD-TO-HEAD: the specified pattern against PIVOT-ONLY at the SAME (k, w, tf, block)
+============================================================================================================================
+  15 matched cells.
+  exhausted_sellers beats pivot-only in 67% of them (chance 50%), mean difference +0.00831
+  absorbed_buying   beats pivot-only in 87% of them, mean difference +0.11837
+
+  pivot-only mean edge +0.00237   exhausted_sellers +0.01068   absorbed_buying +0.12074
+
+============================================================================================================================
+D -- A COIN FLIP IN PLACE OF THE CVD COMPARISON, at the SAME firing rate. 300 draws
+============================================================================================================================
+  Take the pivot-only flag and randomly keep the same FRACTION of its pivots that the CVD
+  comparison keeps. If the real pattern sits inside this distribution, the CVD is decoration.
+
+     tf  k   w block       real (exh.sell)   coin p50   coin p95       p
+     60  2  20 A_primary          +0.07992   -0.00505   +0.05773   0.013
+     60  2  20 B_meta             +0.08655   -0.01526   +0.08362   0.050
+     60  2  20 C_locked           +0.16213   -0.00225   +0.20082   0.090
+     60  3  20 A_primary          +0.01457   -0.01778   +0.06676   0.267
+     60  3  20 B_meta             +0.11187   -0.00881   +0.11199   0.050
+     60  3  20 C_locked           +0.04902   -0.03986   +0.20995   0.213
+    240  2  20 A_primary          +0.02498   -0.02618   +0.28233   0.387
+    240  2  20 B_meta             +0.02411   -0.02918   +0.30634   0.427
+    240  3  20 A_primary          +0.07206   -0.09618   +0.21528   0.193
+    240  3  20 B_meta             +0.10753   +0.01249   +0.39308   0.303
+
+  runtime 27s

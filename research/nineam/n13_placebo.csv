@@ -1,0 +1,25 @@
+feed,block,side,geom,read,d_real,plc_med,plc_p5,plc_p95,pctile
+US30L,A_research,long,1.5N / none,cross,-0.0017,-0.0023,-0.0091,0.0041,0.57
+US30L,B_holdout,long,1.5N / none,cross,0.0008,-0.0017,-0.019,0.0055,0.7
+US30L,A_research,long,1.5N / none,state,-0.0069,-0.019,-0.0248,-0.0134,1.0
+US30L,B_holdout,long,1.5N / none,state,-0.0199,-0.0215,-0.0281,-0.015,0.61
+US30L,A_research,long,100pt / 100pt,cross,-0.0034,-0.0012,-0.0043,0.0024,0.14
+US30L,B_holdout,long,100pt / 100pt,cross,0.0022,0.0004,-0.0025,0.0041,0.85
+US30L,A_research,long,100pt / 100pt,state,-0.0014,-0.0072,-0.0112,-0.0038,1.0
+US30L,B_holdout,long,100pt / 100pt,state,-0.0014,0.0065,0.0008,0.0107,0.01
+US30L,A_research,both,1.5N / none,cross,-0.001,-0.0007,-0.0057,0.0057,0.47
+US30L,B_holdout,both,1.5N / none,cross,-0.0003,-0.0016,-0.0156,0.0055,0.62
+US30L,A_research,both,1.5N / none,state,-0.0107,-0.0101,-0.0148,-0.0053,0.41
+US30L,B_holdout,both,1.5N / none,state,-0.0186,-0.015,-0.021,-0.0093,0.18
+US30L,A_research,both,100pt / 100pt,cross,-0.003,-0.0013,-0.0045,0.0023,0.16
+US30L,B_holdout,both,100pt / 100pt,cross,0.0012,0.0001,-0.0029,0.0036,0.74
+US30L,A_research,both,100pt / 100pt,state,-0.007,-0.0081,-0.0116,-0.0043,0.66
+US30L,B_holdout,both,100pt / 100pt,state,-0.0023,0.0061,0.0019,0.0093,0.0
+US30I,C_forward,long,1.5N / none,cross,-0.0071,0.0013,-0.0075,0.0101,0.08
+US30I,C_forward,long,1.5N / none,state,0.0031,0.0005,-0.0096,0.0158,0.65
+US30I,C_forward,long,100pt / 100pt,cross,-0.0022,0.0001,-0.0024,0.0024,0.1
+US30I,C_forward,long,100pt / 100pt,state,0.0115,0.0018,-0.0031,0.0062,1.0
+US30I,C_forward,both,1.5N / none,cross,-0.0072,-0.001,-0.0089,0.0088,0.1
+US30I,C_forward,both,1.5N / none,state,-0.0089,-0.0063,-0.0169,0.0039,0.37
+US30I,C_forward,both,100pt / 100pt,cross,-0.0016,0.0002,-0.0021,0.0024,0.07
+US30I,C_forward,both,100pt / 100pt,state,0.0068,0.0027,-0.0021,0.0071,0.94

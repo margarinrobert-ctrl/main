@@ -1,0 +1,70 @@
+
+==========================================================================================================================
+8. THE MATCHED CONTROL ON THE TWO FRESH MARKETS -- is the trigger worth anything?
+==========================================================================================================================
+   random entry bars at the SAME minute of day, same count, same geometry, same lock.
+   400 draws per cell. The rule must beat this, not zero.
+
+   US30L all -- TOP/CONSENSUS
+      rule                           n   523  PF  1.317  $/trade  +119.94  win 0.340  Sharpe  +0.63  DD $  23,362  ret/DD  2.69  net $   +62,729
+      matched control: $/trade mean   +48.30  p95  +147.83   -> p(usd) 0.125   PF mean 1.128 -> p(PF) 0.127   FAILS
+      selectivity ctrl: $/trade mean   +67.54   -> p 0.162   PF mean 1.179   a RANDOM filter of the same selectivity does as well
+
+   US30L all -- ROBUST
+      rule                           n   551  PF  1.324  $/trade  +122.85  win 0.354  Sharpe  +0.66  DD $  21,663  ret/DD  3.12  net $   +67,689
+      matched control: $/trade mean   +47.05  p95  +139.89   -> p(usd) 0.092   PF mean 1.124 -> p(PF) 0.110   FAILS
+      selectivity ctrl: $/trade mean   +77.47   -> p 0.182   PF mean 1.205   a RANDOM filter of the same selectivity does as well
+
+   US30L pre-2023 -- TOP/CONSENSUS
+      rule                           n   369  PF  1.346  $/trade  +115.50  win 0.355  Sharpe  +0.71  DD $   8,574  ret/DD  4.97  net $   +42,621
+      matched control: $/trade mean   +33.18  p95  +143.62   -> p(usd) 0.117   PF mean 1.094 -> p(PF) 0.087   FAILS
+      selectivity ctrl: $/trade mean   +33.83   -> p 0.092   PF mean 1.102   a RANDOM filter of the same selectivity does as well
+
+   US30L pre-2023 -- ROBUST
+      rule                           n   387  PF  1.364  $/trade  +123.69  win 0.372  Sharpe  +0.75  DD $  11,867  ret/DD  4.03  net $   +47,867
+      matched control: $/trade mean   +35.22  p95  +142.85   -> p(usd) 0.080   PF mean 1.098 -> p(PF) 0.077   FAILS
+      selectivity ctrl: $/trade mean   +39.57   -> p 0.092   PF mean 1.118   a RANDOM filter of the same selectivity does as well
+
+==========================================================================================================================
+9. PER-YEAR ON THE FRESH MARKETS -- which years carry it
+==========================================================================================================================
+
+   US30L 30m TOP/CONSENSUS: 9 of 10 years positive
+      2016:  +4,191  2017:  +6,564  2018:  +7,839  2019:  +5,699  2020: +10,962  2021:  +3,383  2022:  +3,983  2023: +11,282  2024: +21,751  2025: -12,925
+
+   US30L 30m ROBUST: 8 of 10 years positive
+      2016:  +3,671  2017:  +8,884  2018: +11,825  2019:  +6,884  2020: +15,634  2021:  +3,714  2022:  -3,205  2023:  +8,264  2024: +23,917  2025: -11,902
+
+   US100L all -- TOP/CONSENSUS
+      rule                           n   613  PF  1.253  $/trade   +19.91  win 0.351  Sharpe  +0.54  DD $   4,007  ret/DD  3.05  net $   +12,208
+      matched control: $/trade mean   +11.91  p95   +28.85   -> p(usd) 0.224   PF mean 1.144 -> p(PF) 0.190   FAILS
+      selectivity ctrl: $/trade mean   +12.72   -> p 0.212   PF mean 1.166   a RANDOM filter of the same selectivity does as well
+
+   US100L all -- ROBUST
+      rule                           n   621  PF  1.332  $/trade   +25.88  win 0.372  Sharpe  +0.68  DD $   4,161  ret/DD  3.86  net $   +16,070
+      matched control: $/trade mean   +11.40  p95   +30.37   -> p(usd) 0.112   PF mean 1.139 -> p(PF) 0.095   FAILS
+      selectivity ctrl: $/trade mean   +12.60   -> p 0.090   PF mean 1.165   a RANDOM filter of the same selectivity does as well
+
+   US100L pre-2023 -- TOP/CONSENSUS
+      rule                           n   413  PF  1.165  $/trade   +11.27  win 0.339  Sharpe  +0.35  DD $   3,576  ret/DD  1.30  net $    +4,656
+      matched control: $/trade mean    +8.11  p95   +29.93   -> p(usd) 0.382   PF mean 1.118 -> p(PF) 0.357   FAILS
+      selectivity ctrl: $/trade mean   +12.07   -> p 0.554   PF mean 1.190   a RANDOM filter of the same selectivity does as well
+
+   US100L pre-2023 -- ROBUST
+      rule                           n   416  PF  1.386  $/trade   +24.73  win 0.370  Sharpe  +0.73  DD $   3,112  ret/DD  3.31  net $   +10,287
+      matched control: $/trade mean    +8.27  p95   +29.78   -> p(usd) 0.095   PF mean 1.119 -> p(PF) 0.075   FAILS
+      selectivity ctrl: $/trade mean   +11.80   -> p 0.110   PF mean 1.184   a RANDOM filter of the same selectivity does as well
+
+   US100L 30m TOP/CONSENSUS: 7 of 10 years positive
+      2016:     -91  2017:  +1,263  2018:    +939  2019:    +374  2020:    +784  2021:  +3,812  2022:  -2,425  2023:  +4,338  2024:  +3,954  2025:    -741
+
+   US100L 30m ROBUST: 7 of 10 years positive
+      2016:     -76  2017:  +1,038  2018:  +1,940  2019:  +1,737  2020:  +2,215  2021:  +4,004  2022:    -572  2023:  +4,121  2024:  +4,951  2025:  -3,289
+
+==========================================================================================================================
+VERDICT ON THE CONTROLS
+==========================================================================================================================
+   cells clearing the matched control at p<=0.05: 0 of 8
+   cells clearing the selectivity control at p<=0.05: 0 of 8
+
+   elapsed 11s

@@ -1,0 +1,32 @@
+
+==========================================================================================================================
+10. THE WINNER IN VECTORBT -- a second engine, written to the same spec
+==========================================================================================================================
+   vectorbt 1.1.0
+
+   US30L 30m -- TOP/CONSENSUS
+      my engine                      n   523  PF  1.317  $/trade  +119.94  win 0.340  Sharpe  +0.63  DD $  23,362  ret/DD  2.69  net $   +62,729
+      vectorbt                       n   482  net $  +124,774  $/trade  +258.87
+      trade-count ratio 0.922   SIGNAL SETS AGREE
+
+   US30L 30m -- ROBUST
+      my engine                      n   551  PF  1.324  $/trade  +122.85  win 0.354  Sharpe  +0.66  DD $  21,663  ret/DD  3.12  net $   +67,689
+      vectorbt                       n   513  net $  +131,457  $/trade  +256.25
+      trade-count ratio 0.931   SIGNAL SETS AGREE
+
+   US100L 30m -- TOP/CONSENSUS
+      my engine                      n   613  PF  1.253  $/trade   +19.91  win 0.351  Sharpe  +0.54  DD $   4,007  ret/DD  3.05  net $   +12,208
+      vectorbt                       n   572  net $   +33,248  $/trade   +58.13
+      trade-count ratio 0.933   SIGNAL SETS AGREE
+
+   US100L 30m -- ROBUST
+      my engine                      n   621  PF  1.332  $/trade   +25.88  win 0.372  Sharpe  +0.68  DD $   4,161  ret/DD  3.86  net $   +16,070
+      vectorbt                       n   581  net $   +39,145  $/trade   +67.37
+      trade-count ratio 0.936   SIGNAL SETS AGREE
+
+   NOTE ON WHAT THIS PROVES. The two engines share a signal definition and differ in
+   how a stop and a channel exit inside ONE bar are ordered -- mine takes the stop, the
+   pessimistic branch. A matching trade count with a different net is that convention,
+   not a bug; a mismatched COUNT would be a bug, and is what this run exists to catch.
+
+   elapsed 19s

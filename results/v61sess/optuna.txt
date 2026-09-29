@@ -1,0 +1,62 @@
+OPTUNA on the V61 CVD rule with the SESSION AXIS OPEN -- objective: profit factor AND drawdown.
+
+SEARCHED ON THE RESEARCH BLOCK ONLY. The locked block is computed for every trial and LOGGED, and
+is never visible to the sampler. Finalists are read once at the end and then scored against a
+random entry with their own geometry, because a search that can choose its session and its hold can
+find "be in the market when the market went up" without finding a rule.
+
+TWO OBJECTIVES, both counted as trials:
+  PF     profit factor, with a floor on trades per year so it cannot buy a ratio with a tiny count
+  RETDD  total points / max drawdown -- the direct statement of "more return, less drawdown"
+
+WHAT THIS BRANCH HAS ALREADY MEASURED ABOUT DOING THIS (so the result is read in context):
+  * V64 ran 6,000 Optuna trials on this exact rule and NOT ONE of six finalists beat the shipped
+    presets out of sample; research Sharpe rose monotonically with search effort and locked Sharpe
+    did not follow at all.
+  * The MEDIAN-OF-FOLDS objective, adopted here precisely because raw return fails, was the WORST
+    of the three: research +26.43% -> locked -0.07%.
+  * corr(research, locked) over the exhaustive V61 grid was -0.026. A sampler concentrating in a
+    good region can make that correlation look positive; that is a property of the sampler, not of
+    the ranking.
+So the prior is that this finds nothing that transfers. It is run because it was asked for, the
+population shape is reported before any top row, and every finalist gets a control.
+
+  PF     1200 trials, best research objective 2.4719  (34s)
+  RETDD  1200 trials, best research objective 21.0938  (46s)
+
+==============================================================================================================================
+POPULATION FIRST -- the shape of what was searched, before any top row
+==============================================================================================================================
+  PF     scorable on both blocks   998   research PF>1  99.7%   locked PF>1  58.2%
+         corr(research PF, locked PF)  Pearson -0.458   Spearman -0.487
+         top 1% by research PF: research 2.441 -> locked 0.749   (whole population locked 1.099)
+  RETDD  scorable on both blocks  1038   research PF>1  99.3%   locked PF>1  63.4%
+         corr(research PF, locked PF)  Pearson -0.417   Spearman -0.475
+         top 1% by research PF: research 2.619 -> locked 0.910   (whole population locked 1.206)
+
+==============================================================================================================================
+THE FINALISTS, read ONCE on the locked block
+==============================================================================================================================
+  configuration                   tf geometry               session          blk          n  /yr     PF  total %  maxDD $  ret/DD
+  incumbent 30m as shipped        30 20/20 2.0N tp0         all hours        research   158   82  1.784   +18.84      746   10.02
+                                  30                                         locked      87   84  1.611   +12.04     3127    1.73
+  incumbent 15m as shipped        15 20/20 2.0N tp0         all hours        research   225  117  1.570   +15.67      798    7.44
+                                  15                                         locked     125  121  1.869   +12.78      697    8.23
+  your config 30m                 30 20/20 2.0N tp0         07-11 flat       research    76   40  1.323    +3.35      536    2.37
+                                  30                                         locked      39   38  1.598    +2.81      639    2.16
+  your config 15m                 15 20/20 2.0N tp0         07-11 flat       research    87   45  1.151    +1.48      876    0.77
+                                  15                                         locked      45   43  1.859    +3.58      388    4.26
+  Optuna PF optimum               15 50/47 3.6N tp0         all hours        research    87   45  2.472   +19.64     1263    6.08
+                                  15                                         locked      52   50  0.604    -6.25     3727   -0.71
+  Optuna RETDD optimum            30 18/13 1.5N tp0         all hours        research   116   60  2.506   +23.15      413   21.09
+                                  30                                         locked      70   68  0.910    -2.12     3484   -0.17
+
+==============================================================================================================================
+BOX EDGES -- an optimum sitting on a boundary is the search asking for a wider box
+==============================================================================================================================
+  PF     {'tf': 15, 'ent': 50, 'exn': 47, 'stop': 3.620844600152826, 'tp': 0.0, 'piv': 120, 'win': 450, 'sess': False, 'sh': 8, 'eh': 20, 'flat': False}
+         on the box edge: eh=20 at max
+  RETDD  {'tf': 30, 'ent': 18, 'exn': 13, 'stop': 1.500377317764891, 'tp': 0.0, 'piv': 60, 'win': 150, 'sess': False, 'sh': 12, 'eh': 16, 'flat': True}
+         on the box edge: sh=12 at max
+
+  runtime 46s

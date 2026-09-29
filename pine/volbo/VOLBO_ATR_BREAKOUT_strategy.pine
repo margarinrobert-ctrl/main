@@ -1,0 +1,251 @@
+// @version=6
+// =====================================================================================
+// VOLBO -- the CrackingMarkets intraday volatility breakout, built to the article's spec.
+//
+//   Long  = session open + mult * ATR(N days)
+//   Short = session open - mult * ATR(N days)
+//   Stop  = the SESSION OPEN itself, fixed all day (so risk == mult * ATR by construction)
+//   One long attempt and one short attempt per session; both may be live at once.
+//   Exit at the stop or at the session close. NO TAKE PROFIT.
+//
+// MEASURED ON THIS BRANCH -- the header carries the numbers, not a claim.
+//   Scored in percent of entry price, real costs charged (the article's own backtest and this
+//   script's Strategy Tester default are GROSS unless you set commission and slippage).
+//
+//   feed / block                 n     win    PF    %/trade   at 0.33% risk
+//   US100  2016-2022 research  1338   .457  1.020   +0.0055    +3.14 %/yr
+//   US100  2022-2025 locked     709   .471  1.190   +0.0473    +5.97 %/yr
+//   US30   2016-2022 research  1286   .450  1.023   +0.0045    +1.11 %/yr
+//   US30   2022-2025 locked     683   .439  1.084   +0.0157    +2.81 %/yr
+//   NQ     2022-2025 (1-min)    683   .476  1.226   +0.0485    --
+//   US30_ISO 2024-2026 FORWARD  474   .430  0.963   -0.0071    -1.81 %/yr   <- a DIFFERENT provider
+//
+//   The article reports 27 %/yr at Sharpe 1.04 on SIX markets (SPY IWM QQQ GLD USO DIA) from 2018.
+//   That is a portfolio of two asset classes and cannot be reproduced from two correlated equity
+//   indices; the two-market book here makes 5.64 %/yr at Sharpe 0.63.
+//
+// THREE THINGS THE TESTING FOUND THAT ARE NOT IN THE ARTICLE.
+//   1. THE BREAKOUT LEVEL IS THE WORST PART OF THE RULE. Against a RISK-MATCHED random entry on
+//      the same days and the same sides, the rule loses at p 1.000 on every block: the level is
+//      worth -0.09 to -0.15 %/trade. What earns is DAY SELECTION (+0.11 to +0.17) -- days that
+//      travel 0.4 ATR from the open trend, and entering anywhere on them beats entering at the
+//      level. Chasing the break is the cost of finding the day.
+//   2. ALWAYS-IN BEATS IT on total return on all five blocks (buy the open, sell the close, no
+//      stop), and on Sharpe on three of five.
+//   3. NO BLOCK'S DAY-BLOCK BOOTSTRAP EXCLUDES ZERO. Best is US100 locked at P(mean<=0) 0.061.
+//
+// COST IS NOT THE OBJECTION HERE, which is unusual: the round turn is 1.5-3.2% of the stop,
+// because the stop is 0.4 of a DAILY ATR. The objection is the signal.
+//
+// The multiple `mult` is NOT inert: on US100 the marginal rises monotonically to 0.8 and 0.4 is the
+// worst rung; on US30 it falls off a cliff at 0.8 and 0.4 is among the best. The axis INVERTS
+// between the two feeds, so the shipped 0.4 is kept and no better value is claimed. The ATR PERIOD
+// is close to inert (3/5/10/14/20 span 0.010 %/trade), which matches the article's own claim.
+//
+// The author's own named enhancement -- filter out low-volatility days -- was tested as one
+// declared condition against a same-selectivity random filter on the research blocks: 0 of 8 rungs
+// clear, best p 0.150, and on US100 it is worse than no filter at every rung. It ships OFF.
+//
+// TWO THINGS THIS SCRIPT CANNOT DO, BOTH MEASURED RATHER THAN WAVED AT.
+//   * Pine holds ONE net position, so the article's "one long and one short may both be live" is
+//     not expressible. It never binds: dnLvl < sessOpen < upLvl with the stop AT sessOpen, so the
+//     short trigger is unreachable while a long is open without the long having stopped first.
+//     Measured: both sides live at once on 0.1% of US100 sessions and 0.0% of US30's.
+//   * `strategy.exit` leaves the ENTRY BAR unprotected. Measured on the true 1-minute path, the
+//     share of trades whose entry bar also touches the stop is 0.000 -- the stop is 0.4 of a DAILY
+//     ATR away, so a single bar does not span it. At 15 minutes a naive reading says 18%, and ALL
+//     of the first-bar cases are structural (the session's first bar opens AT the stop, so its low
+//     is below it with probability 1). Resolving those as stops was worth -0.1029 %/trade, more
+//     than twice the entire edge, and flipped the strategy's sign.
+//
+// research/volbo/, docs/ib/STUDY_VOLBO_BREAKOUT.md
+// =====================================================================================
+strategy("VOLBO ATR Breakout", overlay = true, initial_capital = 100000,
+     default_qty_type = strategy.percent_of_equity, default_qty_value = 100,
+     commission_type = strategy.commission.cash_per_contract, commission_value = 0.86,
+     slippage = 2, pyramiding = 2, calc_on_every_tick = false,
+     process_orders_on_close = false)
+
+// ------------------------------------------------------------------ inputs
+gSig = "Signal"
+atrLen  = input.int(5, "ATR length (days)", minval = 1, maxval = 60, group = gSig,
+     tooltip = "The article specifies 5. Close to inert here: 3/5/10/14/20 span 0.010 %/trade.")
+mult    = input.float(0.4, "Breakout multiple x ATR", minval = 0.05, maxval = 3.0, step = 0.05,
+     group = gSig,
+     tooltip = "The article specifies 0.4, and it is also the stop distance, so this sets the risk. " +
+     "The marginal INVERTS between feeds -- rising to 0.8 on US100, falling off a cliff there on " +
+     "US30 -- so 0.4 is kept and no better value is claimed.")
+useLong  = input.bool(true, "Take long breakouts", group = gSig)
+useShort = input.bool(true, "Take short breakouts", group = gSig)
+
+gSess = "Session"
+sessTz  = input.string("America/New_York", "Session timezone", group = gSess,
+     options = ["America/New_York", "Europe/London", "Asia/Tokyo", "UTC"])
+startH = input.int(9, "Session start hour", minval = 0, maxval = 23, group = gSess)
+startM = input.int(30, "Session start minute", minval = 0, maxval = 59, group = gSess)
+endH   = input.int(16, "Session end hour", minval = 0, maxval = 23, group = gSess)
+endM   = input.int(0, "Session end minute", minval = 0, maxval = 59, group = gSess,
+     tooltip = "The article trades ETFs, which exist only in the regular session, so 09:30-16:00 " +
+     "New York is the faithful reading of 'the opening price'. Bare hour/minute in Pine is " +
+     "EXCHANGE time (Chicago for CME), so the timezone is passed explicitly to every call.")
+
+gFilt = "Filters (all measured, all default OFF)"
+useVolFilter = input.bool(false, "Require ATR above its own percentile", group = gFilt,
+     tooltip = "The author's own named enhancement. Tested as one declared condition against a " +
+     "same-selectivity random filter on the research blocks: 0 of 8 rungs clear, best p 0.150, " +
+     "and on US100 every rung is WORSE than no filter. Shipped off.")
+volPct = input.float(0.3, "  ATR percentile floor", minval = 0.0, maxval = 0.95, step = 0.05,
+     group = gFilt)
+volLook = input.int(250, "  percentile lookback (days)", minval = 30, maxval = 750, group = gFilt)
+
+gRisk = "Risk"
+riskPct = input.float(0.33, "Risk per trade (% of equity)", minval = 0.01, maxval = 5.0,
+     step = 0.01, group = gRisk,
+     tooltip = "The article's own sizing. Two trades can be live at once, so the daily maximum " +
+     "for this market is twice this -- measured here, that happens on 0.1% of sessions.")
+showHud = input.bool(true, "Show panel", group = gRisk)
+
+// ------------------------------------------------------------------ session state
+int startMin = startH * 60 + startM
+int endMin   = endH * 60 + endM
+int nyMin    = hour(time, sessTz) * 60 + minute(time, sessTz)
+int tfMin    = int(math.max(1, timeframe.in_seconds() / 60))
+
+bool inSess  = nyMin >= startMin and nyMin < endMin
+bool newSess = inSess and not inSess[1]
+// "flat by the close" means flat at the session-end OPEN, so the order goes out on the bar BEFORE
+// -- `strategy.close_all()` cannot sell the close of the bar that triggers it. Same construction
+// the research uses, so the two agree rather than the engine being bent to match the script.
+bool isLast  = inSess and nyMin + tfMin >= endMin
+
+var float sessOpen = na
+var float dHigh    = na
+var float dLow     = na
+var float dClose   = na
+var float prevClose = na
+var bool  tookLong  = false
+var bool  tookShort = false
+
+// completed daily true ranges, accumulated from THIS chart's own bars.
+// `request.security(..., "D")` on a futures symbol returns the 18:00-17:00 ETH session, not the
+// New York calendar day the rule means, so the daily bar is built here instead.
+var array<float> trs = array.new_float()
+var array<float> atrHist = array.new_float()
+
+if newSess
+    // close off yesterday before starting today
+    if not na(dHigh)
+        float tr = na(prevClose) ? dHigh - dLow
+             : math.max(dHigh - dLow, math.max(math.abs(dHigh - prevClose), math.abs(dLow - prevClose)))
+        array.push(trs, tr)
+        if array.size(trs) > 60
+            array.shift(trs)
+        prevClose := dClose
+    sessOpen := open
+    dHigh := high
+    dLow := low
+    dClose := close
+    tookLong := false
+    tookShort := false
+else if inSess
+    dHigh := math.max(dHigh, high)
+    dLow := math.min(dLow, low)
+    dClose := close
+
+// ATR(atrLen) over COMPLETED days only -- known before today's open, so it is causal
+float atrD = na
+if array.size(trs) >= atrLen
+    float s = 0.0
+    for i = 0 to atrLen - 1
+        s += array.get(trs, array.size(trs) - 1 - i)
+    atrD := s / atrLen
+
+// the percentile of that ATR against its own trailing history, also completed days only
+var float atrRank = na
+if newSess and not na(atrD)
+    array.push(atrHist, atrD)
+    if array.size(atrHist) > volLook
+        array.shift(atrHist)
+    int below = 0
+    for i = 0 to array.size(atrHist) - 1
+        below += array.get(atrHist, i) <= atrD ? 1 : 0
+    atrRank := array.size(atrHist) < 30 ? na : below / array.size(atrHist)
+
+float risk = na(atrD) ? na : mult * atrD
+float upLvl = na(risk) ? na : sessOpen + risk
+float dnLvl = na(risk) ? na : sessOpen - risk
+
+bool volOk = not useVolFilter or (not na(atrRank) and atrRank >= volPct)
+bool armed = inSess and not na(risk) and risk > 0 and volOk and barstate.isconfirmed
+
+// ------------------------------------------------------------------ orders
+// Size so the stop costs `riskPct` of equity. math.* returns FLOAT whatever it is handed, so the
+// whole expression is cast -- `int q = math.max(1, ...)` does not compile.
+int qty = na(risk) or risk <= 0 ? 0
+     : int(math.max(1, math.floor(strategy.equity * riskPct / 100.0 / risk)))
+
+// Pine holds ONE net position, so a long and a short cannot rest simultaneously. That costs
+// nothing here and the reason is structural: dnLvl < sessOpen < upLvl and the stop IS sessOpen, so
+// price cannot reach the short trigger while a long is open without having stopped the long first.
+// Measured on both feeds -- two sides live at the same time on 0.1% of US100 sessions and 0.0% of
+// US30's. While a position is open the opposite pending entry is cancelled and re-armed when flat.
+bool flat = strategy.position_size == 0
+
+if armed and qty > 0 and flat
+    if useLong and not tookLong
+        strategy.entry("L", strategy.long, qty = qty, stop = upLvl)
+    if useShort and not tookShort
+        strategy.entry("S", strategy.short, qty = qty, stop = dnLvl)
+else if not flat
+    if strategy.position_size > 0
+        strategy.cancel("S")
+    else
+        strategy.cancel("L")
+
+// latch the attempt the moment a side fills, so each side is tried at most once per session
+if strategy.position_size > 0
+    tookLong := true
+if strategy.position_size < 0
+    tookShort := true
+
+// The stop is the SESSION OPEN, fixed all day. It is placed unconditionally so it is live from the
+// first bar after the fill. The entry bar itself is unprotected -- the usual `strategy.exit` gap --
+// and here that is measured to cost EXACTLY NOTHING: on the true 1-minute path the share of trades
+// whose entry bar also touches the stop is 0.000, because the stop sits 0.4 of a DAILY ATR away.
+strategy.exit("Lx", from_entry = "L", stop = sessOpen)
+strategy.exit("Sx", from_entry = "S", stop = sessOpen)
+
+// flat at the session close. `strategy.close_all()` cannot sell the close of the bar that triggers
+// it -- it fills at the NEXT bar's open -- which is why the research models the exit the same way.
+if isLast and barstate.isconfirmed
+    strategy.cancel_all()
+    strategy.close_all(comment = "EOD")
+    tookLong := true
+    tookShort := true
+
+// ------------------------------------------------------------------ plots
+plot(inSess and not na(upLvl) ? upLvl : na, "Long trigger", color.new(color.teal, 0),
+     style = plot.style_linebr)
+plot(inSess and not na(dnLvl) ? dnLvl : na, "Short trigger", color.new(color.maroon, 0),
+     style = plot.style_linebr)
+plot(inSess and not na(sessOpen) ? sessOpen : na, "Session open = the STOP",
+     color.new(color.gray, 30), style = plot.style_linebr)
+
+if showHud and barstate.islast
+    var table hud = table.new(position.top_right, 2, 7, border_width = 1)
+    table.cell(hud, 0, 0, "VOLBO", text_color = color.white, bgcolor = color.new(color.teal, 20))
+    table.cell(hud, 1, 0, str.tostring(mult, "#.##") + " x ATR" + str.tostring(atrLen),
+         text_color = color.white, bgcolor = color.new(color.teal, 20))
+    table.cell(hud, 0, 1, "daily ATR")
+    table.cell(hud, 1, 1, na(atrD) ? "warming up" : str.tostring(atrD, "#.##"))
+    table.cell(hud, 0, 2, "risk / trade")
+    table.cell(hud, 1, 2, na(risk) ? "-" : str.tostring(risk, "#.##") + " pts")
+    table.cell(hud, 0, 3, "qty")
+    table.cell(hud, 1, 3, str.tostring(qty))
+    table.cell(hud, 0, 4, "ATR pctile")
+    table.cell(hud, 1, 4, na(atrRank) ? "-" : str.tostring(atrRank, "#.##"))
+    table.cell(hud, 0, 5, "trades")
+    table.cell(hud, 1, 5, str.tostring(strategy.closedtrades))
+    table.cell(hud, 0, 6, "commission set?")
+    table.cell(hud, 1, 6, "0.86/side + 2 ticks",
+         bgcolor = color.new(color.green, 70))

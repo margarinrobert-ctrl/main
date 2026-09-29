@@ -1,0 +1,30 @@
+V63 stage E -- the maximum hold, which turned out to be LOAD-BEARING, and the exit profile.
+
+V61 and V62 measured the 480-bar cap INERT: with a channel exit and an ATR stop, one of them always
+fired first. This design has no channel exit and no target, so the cap is the exit for every trade
+that does not stop out -- the median WINNER holds exactly 480 bars. An axis that binds must be
+swept and reported, not inherited.
+
+======================================================================================================================
+E1. THE MAXIMUM HOLD -- pooled over the seven blocks that chose nothing
+======================================================================================================================
+    hold  bars  days |     n   pct/tr    PF    win  blocks +  capped  streak
+      60    60   1.2 |  1454  +0.0590  1.24  27.6%    7/7      29.9%      17
+     120   120   2.5 |  1317  +0.1054  1.40  22.9%    7/7      24.0%      17
+     240   240   5.0 |  1074  +0.1427  1.48  17.3%    7/7      17.7%      19
+     480   480  10.0 |   850  +0.1988  1.60  14.5%    6/7      14.4%      28
+     960   960  20.0 |   699  +0.2484  1.69  10.4%    7/7      10.4%      31
+
+  `capped` is the share of trades closed by the cap rather than by the stop. `streak`
+  is the longest run of consecutive losers in the pooled out-of-sample stream -- with a
+  win rate near 15% that is the number a live trader feels, not the profit factor.
+
+======================================================================================================================
+E2. THE EXIT PROFILE AT THE SHIPPED 480-BAR CAP
+======================================================================================================================
+  US100   n  471   stopped  86.0% (mean -0.445)   capped  14.0% (mean +4.419)   the capped trades supply   261% of net
+          median hold  15.5 h   winners  240.5 h   losers  11.5 h   top 5% of trades supply  140% of net
+  US30    n  461   stopped  85.0% (mean -0.325)   capped  15.0% (mean +2.971)   the capped trades supply   264% of net
+          median hold  13.0 h   winners  240.5 h   losers   9.2 h   top 5% of trades supply  153% of net
+  NQ      n  182   stopped  86.3% (mean -0.383)   capped  13.7% (mean +3.916)   the capped trades supply   259% of net
+          median hold  16.0 h   winners  240.5 h   losers  14.0 h   top 5% of trades supply  144% of net

@@ -1,0 +1,101 @@
+V63 stage H -- the entry window and the hard flatten, on every block of three markets.
+V63 session control -- an entry window and a hard flatten, and a walk-forward that re-chooses.
+
+TWO MECHANICS, KEPT SEPARATE, because they are different things and this branch has measured them
+behaving differently:
+  ENTRY WINDOW   only take signals whose bar closes inside [start, stop). A trade opened inside the
+                 window is then managed normally and may run for days.
+  HARD FLATTEN   in addition, close any open position at the stop time. "Flat by 16:00" means flat
+                 at the 16:00 OPEN -- `strategy.close_all()` cannot sell the close of the bar that
+                 triggers it, so the engine exits at the OPEN of the first bar at or after the stop
+                 minute, which is what the script will actually do.
+
+WHAT TO EXPECT, on eleven prior measurements here: the flatten is destructive and the window is
+usually destructive. V63 is the most extreme case yet -- its median WINNER holds 240 hours and
+exits on the 480-bar cap -- so a daily flatten truncates every winner it has. That is a prediction,
+and it is tested rather than asserted.
+
+  .. US100 done
+  .. US30 done
+  .. NQ done
+
+======================================================================================================================
+H1. IN SAMPLE / OUT OF SAMPLE -- the window alone, then the window with a hard flatten
+    Percent of entry price per trade. `all hours` with no flatten is the shipped design.
+======================================================================================================================
+
+  US100                   research              validation                    test
+    all hours            n 264 +0.2200 PF 1.67   n 116 +0.1596 PF 1.31   n  91 +0.3842 PF 2.03
+    09:30-16:00          n 213 +0.3002 PF 1.95   n  96 +0.1578 PF 1.30   n  83 +0.3014 PF 1.87
+    09:30-16:00  flat    n 380 +0.0253 PF 1.17   n 145 +0.0640 PF 1.29   n 154 +0.0430 PF 1.32
+    09:30-12:00          n 146 +0.2452 PF 1.93   n  51 +0.3402 PF 1.78   n  57 +0.1132 PF 1.37
+    09:30-12:00  flat    n 205 +0.0515 PF 1.44   n  69 -0.0454 PF 0.75   n  77 -0.0449 PF 0.68
+    08:00-12:00          n 152 +0.2289 PF 1.88   n  54 +0.2935 PF 1.67   n  62 +0.1129 PF 1.38
+    08:00-12:00  flat    n 215 +0.0616 PF 1.54   n  74 -0.0669 PF 0.66   n  85 -0.0555 PF 0.63
+    07:00-11:00          n 106 +0.2856 PF 2.19   n  41 +0.1988 PF 1.51   n  40 +0.2199 PF 1.90
+    07:00-11:00  flat    n 143 +0.0443 PF 1.38   n  47 -0.0050 PF 0.98   n  53 +0.0107 PF 1.09
+    09:30-11:00          n 100 +0.3138 PF 2.29   n  38 +0.2539 PF 1.67   n  36 +0.2250 PF 1.89
+    09:30-11:00  flat    n 133 +0.0272 PF 1.23   n  42 +0.0407 PF 1.19   n  45 +0.0488 PF 1.50
+    13:00-16:00          n 181 +0.2437 PF 1.73   n  80 +0.2926 PF 1.57   n  70 +0.1966 PF 1.51
+    13:00-16:00  flat    n 289 +0.0131 PF 1.10   n 115 +0.0903 PF 1.53   n 111 +0.0406 PF 1.34
+    03:00-12:00          n 158 +0.2072 PF 1.79   n  55 +0.2805 PF 1.64   n  62 +0.1265 PF 1.43
+    03:00-12:00  flat    n 223 +0.0693 PF 1.60   n  75 -0.0717 PF 0.64   n  89 -0.0540 PF 0.65
+
+  US30                   research              validation                    test
+    all hours            n 261 +0.1799 PF 1.69   n 115 +0.1352 PF 1.42   n  85 +0.1797 PF 1.68
+    09:30-16:00          n 204 +0.1358 PF 1.52   n 103 +0.1055 PF 1.32   n  76 +0.1375 PF 1.50
+    09:30-16:00  flat    n 319 +0.0154 PF 1.12   n 148 -0.0144 PF 0.91   n 119 +0.0671 PF 1.57
+    09:30-12:00          n 128 +0.2484 PF 2.16   n  64 +0.0091 PF 1.03   n  41 +0.3483 PF 2.71
+    09:30-12:00  flat    n 179 +0.0046 PF 1.05   n  78 +0.0105 PF 1.07   n  59 -0.0080 PF 0.92
+    08:00-12:00          n 144 +0.2345 PF 2.10   n  69 +0.0713 PF 1.22   n  49 +0.2603 PF 2.29
+    08:00-12:00  flat    n 201 +0.0011 PF 1.01   n  89 -0.0019 PF 0.99   n  68 -0.0202 PF 0.82
+    07:00-11:00          n 120 +0.2308 PF 2.19   n  53 -0.0093 PF 0.97   n  43 +0.1148 PF 1.58
+    07:00-11:00  flat    n 150 +0.0047 PF 1.04   n  65 -0.0705 PF 0.55   n  54 +0.0030 PF 1.03
+    09:30-11:00          n 101 +0.2530 PF 2.30   n  47 -0.0957 PF 0.70   n  33 +0.2323 PF 2.18
+    09:30-11:00  flat    n 125 +0.0092 PF 1.10   n  52 -0.0682 PF 0.52   n  43 +0.0177 PF 1.16
+    13:00-16:00          n 153 +0.1727 PF 1.66   n  87 +0.0119 PF 1.03   n  71 +0.0025 PF 1.01
+    13:00-16:00  flat    n 231 +0.0262 PF 1.23   n 117 -0.0106 PF 0.93   n  91 +0.0425 PF 1.38
+    03:00-12:00          n 153 +0.2389 PF 2.13   n  73 +0.1497 PF 1.49   n  51 +0.2196 PF 2.04
+    03:00-12:00  flat    n 226 +0.0115 PF 1.11   n  97 -0.0005 PF 1.00   n  75 -0.0111 PF 0.90
+
+  NQ                   research                  locked
+    all hours            n 113 +0.3585 PF 2.28   n  69 -0.0401 PF 0.90
+    09:30-16:00          n  93 +0.4114 PF 2.44   n  55 -0.1311 PF 0.65
+    09:30-16:00  flat    n 169 +0.0523 PF 1.40   n  78 +0.0527 PF 1.43
+    09:30-12:00          n  66 +0.2217 PF 1.86   n  30 +0.0243 PF 1.08
+    09:30-12:00  flat    n  85 -0.0172 PF 0.87   n  41 +0.0819 PF 1.84
+    08:00-12:00          n  67 +0.2141 PF 1.83   n  34 -0.0136 PF 0.95
+    08:00-12:00  flat    n  87 -0.0250 PF 0.81   n  45 +0.0552 PF 1.50
+    07:00-11:00          n  47 +0.0675 PF 1.26   n  20 +0.2815 PF 2.14
+    07:00-11:00  flat    n  53 -0.0417 PF 0.73   n  26 +0.0901 PF 1.86
+    09:30-11:00          n  45 +0.0816 PF 1.31   n  16 +0.4272 PF 2.82
+    09:30-11:00  flat    n  50 -0.0202 PF 0.86   n  22 +0.1469 PF 3.16
+    13:00-16:00          n  73 +0.5238 PF 2.83   n  47 -0.2398 PF 0.41
+    13:00-16:00  flat    n 126 +0.0541 PF 1.55   n  65 +0.0011 PF 1.01
+    03:00-12:00          n  67 +0.2168 PF 1.85   n  38 -0.0523 PF 0.83
+    03:00-12:00  flat    n  88 -0.0180 PF 0.86   n  50 +0.0162 PF 1.12
+
+======================================================================================================================
+H2. POOLED OVER THE SEVEN BLOCKS THAT CHOSE NOTHING
+======================================================================================================================
+    window        flat      n    pct/tr     total  blocks +  flat exits  cap exits
+    all hours     no      850   +0.1988    +169.0    6/7           0.0%      14.5%
+    09:30-16:00   no      710   +0.1693    +120.2    6/7           0.0%      14.1%
+    09:30-16:00   yes    1132   +0.0350     +39.6    6/7          60.4%       0.0%
+    09:30-12:00   no      437   +0.1964     +85.8    7/7           0.0%      15.1%
+    09:30-12:00   yes     588   -0.0060      -3.5    3/7          63.9%       0.0%
+    08:00-12:00   no      479   +0.1841     +88.2    6/7           0.0%      14.4%
+    08:00-12:00   yes     649   -0.0165     -10.7    2/7          59.5%       0.0%
+    07:00-11:00   no      364   +0.1590     +57.9    6/7           0.0%      12.9%
+    07:00-11:00   yes     448   -0.0072      -3.2    4/7          55.1%       0.0%
+    09:30-11:00   no      316   +0.1803     +57.0    6/7           0.0%      13.9%
+    09:30-11:00   yes     379   +0.0119      +4.5    5/7          63.1%       0.0%
+    13:00-16:00   no      581   +0.1580     +91.8    6/7           0.0%      14.5%
+    13:00-16:00   yes     856   +0.0356     +30.5    6/7          72.4%       0.0%
+    03:00-12:00   no      499   +0.1894     +94.5    6/7           0.0%      14.6%
+    03:00-12:00   yes     700   -0.0132      -9.2    2/7          57.0%       0.0%
+
+  SHIPPED (all hours, no flatten): +0.1988 %/trade on 850 trades, 6/7 blocks positive.
+  Best WINDOW without a flatten: all hours +0.1988 (6/7)
+  Best WINDOW with a flatten:    13:00-16:00 +0.0356 (6/7), and the flatten closes 72% of its trades
+  Mean cost of adding the flatten, over the seven windows: -0.1710 %/trade

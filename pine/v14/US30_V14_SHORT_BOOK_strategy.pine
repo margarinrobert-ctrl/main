@@ -1,0 +1,138 @@
+// ================================================================================================
+// V14 US30 SHORT BOOK -- 07:00-11:00 New York, Donchian 30 down-breakout, resting limit entry
+//
+// THIS IS THE HIGHEST US30 INTRADAY NUMBER ON THE BRANCH AND IT DOES NOT SURVIVE ITS OWN ENGINE
+// CORRECTION. Read this before the inputs.
+//
+// docs/ib/STUDY_V14_WINDOW_GRID.md shipped this configuration and published, on a held-back block:
+//     US30 train  n 145  PF 1.46  +27.89 pts  Sharpe 3.04
+//     US30 2026   n  71  PF 1.82  +48.28 pts  Sharpe 4.07
+//
+// Its entry is a limit resting 0.75 x ATR(5) above the signal close with an EIGHT-BAR EXPIRY, and
+// it was measured on `limit_entry._walk_limit`. STUDY_V34 later established that this walker frees
+// its position lock only on EXIT, so an unfilled RESTING order blocks nothing and the next trigger
+// places its own -- a mean of 2.45 live orders at expiry 2 rising to 15.9 at expiry 18. That is a
+// book. A SCRIPT HOLDS ONE ORDER, which is what this file does, so the correction is not optional
+// here -- it is what the platform enforces.
+//
+// ------------------------------------------------------------------------------------------
+// RE-MEASURED (research/vpus30/v14_oneorder.py), same rules, same feed, only the lock changing
+// ------------------------------------------------------------------------------------------
+//   engine                    block      n   pts/trade     PF    total   median hold
+//   book (what V14 used)      research  437      +6.17  1.095    +2695      150 min
+//   book                      HOLDOUT   169      +3.55  1.051     +600      135 min
+//   ONE LIVE ORDER (this)     research  353      -6.82  0.904    -2407      135 min
+//   ONE LIVE ORDER (this)     HOLDOUT   133      -9.58  0.869    -1274      120 min
+//
+// THE SIGN FLIPS. And STUDY_V34's signature reproduces exactly -- under the book engine $/signal
+// climbs monotonically with resting time while the fill rate barely moves, and under one order it
+// does not:
+//   expiry           2       4       8      12      18
+//   fill rate     .320    .388    .416    .430    .435   (book)
+//   $/signal     -0.03   +0.00   +2.26   +2.73   +3.38   (book)   <- profit with no extra fills
+//   $/signal     +0.25   -1.51   -2.53   -2.52   -2.92   (one live order)
+//
+// HONEST LIMIT ON WHAT THAT SHOWS. The published 1.46 / 1.82 came from a different US30 block (an
+// ISO 2026 tail) and a grid cell selected there; the re-measurement above runs on US30_LONG_15m
+// with this branch's own 75% split, and its BOOK-engine numbers are 1.095 / 1.051, not 1.46 / 1.82.
+// So this is NOT a restatement of "1.82 becomes 0.87". What it establishes is the DIRECTION AND
+// SIZE of the one-order correction on this exact configuration: about 13 points a trade, enough to
+// take it from profitable to losing on both blocks. The published figures were never re-measured
+// under one order, and this is the first time it has been done.
+//
+// Also unresolvable here: only 15-minute US30 bars exist, so STUDY_V10_LIMIT's standing rule --
+// settle every limit-entry question on the true 1-minute path -- could not be applied. A fill is
+// awarded when the bar's HIGH reaches the limit, which is the optimistic reading.
+//
+// NO EDGE IS CLAIMED. This ships so the correction is reproducible on a chart, not to be traded.
+//
+// ATR is ta.ema(ta.tr(true), n), NOT ta.atr. `hour`/`minute` are EXCHANGE time, not New York.
+// ================================================================================================
+//@version=5
+strategy("V14 US30 short book (one live order)", overlay = true,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 50000, currency = currency.USD,
+     commission_type = strategy.commission.cash_per_order, commission_value = 1.145,
+     slippage = 0, pyramiding = 0, calc_on_every_tick = false)
+
+grpR   = "Rule (V14 shipped configuration)"
+donN   = input.int(30, "Donchian down-breakout (bars)", minval = 2, group = grpR)
+exN    = input.int(25, "Exit channel (bars)", minval = 2, group = grpR)
+emaF   = input.int(13, "EMA fast", minval = 2, group = grpR)
+emaS   = input.int(34, "EMA slow", minval = 2, group = grpR)
+adxN   = input.int(14, "ADX length", minval = 2, group = grpR)
+adxMin = input.float(22, "ADX floor", minval = 0, step = 1, group = grpR,
+     tooltip = "In 80% of the top 1000 short configurations of the original 1,290,240-cell grid.")
+atrN   = input.int(14, "ATR length (stop)", minval = 2, group = grpR)
+limAtr = input.int(5, "ATR length (limit offset)", minval = 2, group = grpR)
+limMlt = input.float(0.75, "Limit offset (x ATR)", minval = 0.0, step = 0.05, group = grpR,
+     tooltip = "The limit rests ABOVE the signal close: shorting a rally back up into it is " +
+               "selling strength, which is why a short book worked here at all.")
+expiry = input.int(8, "Limit expiry (bars)", minval = 1, group = grpR,
+     tooltip = "THE AXIS THAT CARRIED THE ORIGINAL RESULT. Under the engine V14 used, $/signal " +
+               "climbed monotonically with this number while the fill rate stood still -- extra " +
+               "profit with no extra fills. Under one live order that gradient is gone.")
+stopN  = input.float(2.5, "Stop (x ATR)", minval = 0.25, step = 0.25, group = grpR)
+tpR    = input.float(2.0, "Target (R)", minval = 0.0, step = 0.5, group = grpR,
+     tooltip = "0 = no target. 1.5-2R was in 79% of the original top 1000.")
+
+grpS   = "Session"
+sessStr = input.session("0700-1100", "Entry window (exchange time)", group = grpS,
+     tooltip = "Entries only. EXITS ARE FREE -- the original configuration lets trades run past " +
+               "the window, and the median hold is 120-150 minutes, so this is not a scalp.")
+
+// ---------------------------------------------------------------------------------------------
+// series
+// ---------------------------------------------------------------------------------------------
+atr14 = ta.ema(ta.tr(true), atrN)
+atr5  = ta.ema(ta.tr(true), limAtr)
+ef    = ta.ema(close, emaF)
+es    = ta.ema(close, emaS)
+[pdi, ndi, adxV] = ta.dmi(adxN, adxN)      // ta.dmi returns [+DI, -DI, ADX] -- the third element
+donLo = ta.lowest(low, donN)[1]
+exHi  = ta.highest(high, exN)[1]
+inSess = not na(time(timeframe.period, sessStr))
+
+trig = barstate.isconfirmed and inSess and close < donLo and ef < es and adxV >= adxMin
+     and not na(atr14) and atr14 > 0 and not na(atr5)
+
+// ---------------------------------------------------------------------------------------------
+// ONE live order. A pending unfilled limit blocks the next trigger until it expires -- that single
+// rule is the whole STUDY_V34 correction, and on a chart it is not a choice.
+// ---------------------------------------------------------------------------------------------
+var int   pendBar  = na
+var float pendRisk = na
+pending = not na(pendBar) and strategy.position_size == 0
+
+if trig and not pending and strategy.position_size == 0
+    lim = close + limMlt * atr5
+    pendBar  := bar_index
+    pendRisk := stopN * atr14
+    lossT = math.max(1.0, pendRisk / syminfo.mintick)
+    profT = tpR > 0 ? math.max(1.0, tpR * pendRisk / syminfo.mintick) : na
+    strategy.entry("S", strategy.short, limit = lim)
+    strategy.exit("Sx", from_entry = "S", loss = lossT, profit = profT)
+
+// the order expires unfilled -- cancel it and release the lock
+if pending and bar_index - pendBar >= expiry
+    strategy.cancel("S")
+    pendBar := na
+
+// it filled -- the lock is now held by the position instead
+if strategy.position_size != 0 and not na(pendBar)
+    pendBar := na
+
+// channel exit: the engine covers at this bar's close, a script at the next bar's open
+if barstate.isconfirmed and strategy.position_size < 0 and not na(exHi) and close > exHi
+    strategy.close("S", comment = "chan")
+
+// ---------------------------------------------------------------------------------------------
+// plots
+// ---------------------------------------------------------------------------------------------
+plot(donLo, "Donchian 30 low", color = color.new(color.teal, 40))
+plot(exHi,  "exit channel 25", color = color.new(color.orange, 60))
+plot(ef, "EMA 13", color = color.new(color.blue, 55))
+plot(es, "EMA 34", color = color.new(color.purple, 55))
+plot(pending ? close + limMlt * atr5 : na, "resting limit", color = color.new(color.red, 0),
+     style = plot.style_linebr, linewidth = 2)
+bgcolor(inSess ? color.new(color.gray, 92) : na, title = "entry window")

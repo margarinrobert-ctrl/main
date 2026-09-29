@@ -1,0 +1,302 @@
+//@version=5
+// V15 -- the synthesis, and the correction that came with building it.
+//
+// ================================ WHAT THIS IS ================================
+// A SHORT book on the 07:00-11:00 New York window, entered with a RESTING LIMIT, run on US30 and
+// US100 together. An optional long leg is included and is OFF, with its numbers shown.
+//
+//   SHORT (default on)   Donchian 30 down-break | EMA13 < EMA34 | ADX(14) >= 22
+//                        entry: resting limit 0.75 x ATR(5) ABOVE the close, 8-bar expiry
+//                        stop 2.5 x ATR(20) or the 25-bar high, whichever is NEARER | target 2R
+//                        entries 07:00-11:00 New York only; exits run free
+//   LONG  (default off)  Donchian 30 up-break | ADX >= 25 AND efficiency(20) >= 0.30 AND chop(14) <= 55
+//                        AND EMA13 > EMA48 AND EMA12 > EMA100 | limit 0.75 x ATR(5) BELOW
+//                        stop 2.0N or the 20-bar low | NO target | all hours
+//
+// Points are not comparable across two instruments, so every trade is divided by its own stop
+// distance and the book is measured in R.
+//
+// ================================ READ THIS BEFORE THE NUMBERS ================================
+// **THE FIGURES BELOW ARE HALF WHAT THE RESEARCH ENGINE REPORTED, AND THE ENGINE WAS WRONG.**
+// The parity harness (research/v15/v15_parity.py) re-implements this script's order model and
+// diffs it against the engine. Every trade the two share is IDENTICAL -- exit bar 100%, P&L
+// correlation 1.0000 on all four legs. They do not share all their trades:
+//
+//                        engine                 this script            kept
+//   US30  short       216 trades  +62.4R      174 trades  +29.5R        47%
+//   US30  long        311 trades  +58.6R      260 trades  +13.9R        24%
+//   US100 short       214 trades  +55.9R      168 trades  +17.5R        31%
+//   US100 long        276 trades  +97.0R      246 trades  +34.0R        35%
+//
+// The engine scans forward from each signal in turn and fills at THAT signal's level, so a limit
+// set eight bars ago outranks a nearer one set since. Reproducing that needs eight simultaneous
+// resting orders AND for the far one to fill first, which is not how a book fills. A script has
+// ONE live order. Every number below is computed with the order model this script can actually
+// run. The same correction applies to every limit-entry figure in docs/ib/STUDY_V10_LIMIT.md and
+// docs/ib/STUDY_V14_WINDOW_GRID.md -- see docs/ib/STUDY_V15_BOOK.md.
+//
+// ================================ SELECTED ON TRAIN, JUDGED ONCE ================================
+// Train 2024-08 to 2025-12. The control draws random entries with the SAME side, geometry, order
+// type and minute-of-day mix, 300 times per leg, and asks how often it beats the rule.
+//
+//   book             train R  Sharpe  maxDD   ctrl p  |  2026 R  Sharpe  maxDD  ret/DD
+//   shorts, LIMIT      +24.0    1.32   13.2    0.003  |   +23.0    2.50    9.2    2.50   <-- SHIPPED
+//   shorts, market      +5.5    0.20   26.2    0.330  |   +22.9    1.82   13.3    1.72
+//   full,   LIMIT      +66.3    1.26   33.0    0.017  |   +28.6    1.14   24.9    1.15
+//   full,   market     +59.9    0.89   31.2    0.357  |   +42.4    1.32   29.2    1.45
+//
+// The choice was made on the train column and the control. **The limit is what beats the control;
+// with market orders neither book does (p 0.33, p 0.36).** Adding the long leg nearly triples the
+// judged drawdown, 9.2R to 24.9R, and halves Sharpe, which is why it ships off.
+//
+// The judged block, 2026-01-01 to 2026-08-26, was read ONCE: 81 trading days, +23.0R, Sharpe 2.50,
+// max drawdown 9.22R. Against the same matched control, **p = 0.010** -- and the control's MEDIAN
+// outcome is -10.9R, so random entries with this geometry LOSE. The rule is doing the work.
+//
+// ================================ WHAT THE MECHANIC IS AND IS NOT ================================
+// An earlier reading of this data said the limit beat a market order in all eight cells. With the
+// implementable order model it does not -- it wins four and loses four:
+//
+//                        market order        resting limit
+//   US30  short train    PF 0.84  -18.5      PF 1.23  +15.6      limit
+//   US30  short judge    PF 1.12   +6.4      PF 1.50  +14.0      limit
+//   US30  long  train    PF 1.18  +25.0      PF 1.29  +30.1      limit
+//   US30  long  judge    PF 1.05   +3.4      PF 0.70  -16.1      market
+//   US100 short train    PF 1.23  +24.0      PF 1.13   +8.4      market
+//   US100 short judge    PF 1.30  +16.6      PF 1.29   +9.1      tie
+//   US100 long  train    PF 1.25  +29.4      PF 1.14  +12.3      market
+//   US100 long  judge    PF 1.27  +16.0      PF 1.47  +21.7      limit
+//
+// So the honest claim is narrower than the one it replaces: the limit is not uniformly the better
+// fill, but it is the version that clears a matched control, and it does so by taking FEWER and
+// better trades. That is also why it survives being judged: on 2026 the two mechanics earn the
+// same net R (+23.0 against +22.9) and the limit does it at Sharpe 2.50 against 1.82, on half the
+// drawdown.
+//
+// ================================ STABILITY ================================
+//   Quarters, both instruments, 2024-Q3 to 2026-Q3, in R:
+//     -0.9  +2.5  +10.4  +4.3  -0.5  +8.2  +19.8  +4.3  -1.1     6 of 9 positive, worst -1.1R
+//   Monte Carlo, 20,000 shuffles of the judged daily series: realised drawdown 9.22R against a
+//     median of 9.4 and a p99 of 18.3. **SIZE FOR 18R, NOT THE 9 YOU CAN SEE.**
+//   Bootstrap on the judged block: P(mean daily R <= 0) = 0.073. That is NOT significant at 5%.
+//     The rule clears its control (p 0.010); it does not clear zero on 81 days of daily data.
+//     Eight months is a short holdout and this is what a short holdout can and cannot say.
+//   Drop a random 10% of days: Sharpe p5 1.47, median 2.48. No single stretch carries it.
+//
+// ================================ POSITION SIZING ================================
+// Risk a FIXED FRACTION per trade, sized off the stop distance, never a fixed contract count.
+// 60 trading days, 6% target, 4% trailing drawdown, on the shipped book:
+//
+//   risk/trade   P(pass)   P(bust)   edge     P(neither)
+//      0.25%      25.5%     12.8%   +12.8%      61.7%    <-- best edge
+//      0.50%      49.4%     47.9%    +1.5%       2.7%
+//      0.75%      45.3%     54.7%    -9.4%       0.0%
+//      1.00%      42.3%     57.7%   -15.5%       0.0%
+//
+// Read the last column before the first. **At the only risk level with a real edge, the likeliest
+// outcome by far is that 60 days ends with neither a pass nor a bust.** This book does not clear a
+// 6% target inside an evaluation window at survivable risk; sized to survive it simply grinds.
+// Treat it as an income book that can be run on a funded account, not as an evaluation strategy.
+//
+// ================================ THE LIMITATION THAT GATES ALL OF IT ================================
+// **THIS RESTS ON A LIMIT ENTRY AND COULD NOT BE SETTLED AT 1-MINUTE RESOLUTION.**
+// docs/ib/STUDY_V10_LIMIT.md showed a limit-entry backtest run on the same bars that decide the
+// exits measures intrabar ordering, and that three such artifacts together were worth a Sharpe of
+// 11 on a rule-free test. This model carries all three fixes -- on the fill bar only the ATR stop
+// is live, no target and no channel -- and the standing rule on this branch is that such questions
+// are settled on the TRUE 1-MINUTE PATH. Only 15-minute bars exist for US30 and US100, so that
+// test could not be run, and the order-model correction above is exactly the class of error that
+// hides at this resolution.
+// **One-minute US30 and US100 data is the single highest-value thing that could be added.**
+//
+// A one-bar scalp is arithmetically dead here regardless: 180 IC tests put the largest |IC| at
+// 0.0305, where h=1 needs |IC| >= 0.10 to clear a 1.2-point round turn. Holds here are hours.
+// ==========================================================================================
+
+strategy("V15 book -- 07:00-11:00 short, limit entry", overlay = true, pyramiding = 0,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 100000, calc_on_every_tick = false, process_orders_on_close = false,
+     commission_type = strategy.commission.cash_per_order, commission_value = 0.72, slippage = 1)
+
+// ===================== STRATEGY TESTER PROPERTIES =====================
+//   Script execution   ON BAR CLOSE only -- see docs/ib/STUDY_TICK_RECALC.md.
+//   Bar detalization   HIGH, WITH DEEP BACKTESTING. Not optional: the whole question is whether the
+//                      limit filled before the stop, and without intrabar data the emulator guesses.
+//   Slippage           1 tick. A resting limit pays none on entry -- you provide liquidity -- but
+//                      the exit stop does.
+//   Leverage Infinity  stops silent order rejection; then read DOLLAR drawdown, not %.
+//   Run it on US30 AND US100 together. The book's numbers are the two markets combined.
+// ======================================================================
+
+gS       = "Short leg -- the shipped book"
+useShort = input.bool(true, "Trade the SHORT leg", group = gS)
+winStart = input.int(420, "Entry window start, minutes after New York midnight", minval=0, maxval=1439, group=gS)
+winEnd   = input.int(660, "Entry window end", minval=0, maxval=1440, group=gS,
+     tooltip="420-660 = 07:00-11:00 New York. Entries only; once open, the trade exits on its own stop and channel however long that takes.")
+sDon     = input.int(30,  "Donchian entry length", minval=2, group=gS)
+sFast    = input.int(13,  "EMA fast", minval=2, group=gS)
+sSlow    = input.int(34,  "EMA slow", minval=3, group=gS)
+sAdx     = input.float(22,"ADX(14) floor", minval=0, step=1, group=gS)
+sStop    = input.float(2.5,"ATR stop multiple", minval=0.1, step=0.1, group=gS)
+sTp      = input.float(2.0,"Target, in R (0 = none)", minval=0, step=0.5, group=gS)
+sExit    = input.int(25,  "Donchian exit channel", minval=2, group=gS)
+
+gL       = "Long leg -- OFF: it nearly triples the book's drawdown out of sample"
+useLong  = input.bool(false,"Trade the LONG leg", group = gL,
+     tooltip="On the 2026 judge block adding it took net R from 23.0 to 28.6 and max drawdown from 9.2R to 24.9R, cutting Sharpe 2.50 -> 1.14 and return/drawdown 2.50 -> 1.15.")
+lDon     = input.int(30,  "Donchian entry length", minval=2, group=gL)
+lStop    = input.float(2.0,"ATR stop multiple", minval=0.1, step=0.1, group=gL)
+lExit    = input.int(20,  "Donchian exit channel", minval=2, group=gL)
+lAdx     = input.float(25,"ADX floor", minval=0, step=1, group=gL)
+lEr      = input.float(0.30,"Efficiency ratio(20) floor", minval=0, step=0.05, group=gL)
+lChop    = input.float(55,"Choppiness(14) ceiling", minval=0, step=1, group=gL)
+
+gE       = "Entry mechanic -- what makes the book clear its matched control"
+limMult  = input.float(0.75,"Resting limit, x ATR(5) in our favour", minval=0, step=0.05, group=gE,
+     tooltip="Set to 0 for market orders. The short book then fails a matched control at p 0.33 on train, and its judged Sharpe falls 2.50 -> 1.82 on twice the drawdown.")
+limWait  = input.int(8,   "Bars the limit rests before cancelling", minval=1, group=gE)
+qty      = input.int(1,   "Contracts (size by RISK, not by count -- see the header)", minval=1, group=gE)
+
+// ----------------------------------------------------------------- series
+// ta.atr IS Wilder's RMA of true range. The LIMIT distance uses ema(TR,5), a DIFFERENT series --
+// that is what the research layer uses for it, and swapping them moves every level in the script.
+atrN   = ta.atr(20)
+atrLim = ta.ema(ta.tr(true), 5)
+sLo    = ta.lowest(low,  sDon)[1]          // ENTRY channel: excludes this bar so a break is possible
+lHi    = ta.highest(high, lDon)[1]
+// EXIT channels take NO [1]. The order is placed at this bar's close and is live on the NEXT bar,
+// so `ta.highest(high, n)` here is the same window the engine reads on the bar it fires. Writing
+// [1] -- which looks right beside the entry channels -- makes every exit one bar staler than the
+// research and was worth a fifth of the trades in the parity diff.
+sHi    = ta.highest(high, sExit)
+lLo    = ta.lowest(low,  lExit)
+[_pdi, _mdi, adxVal] = ta.dmi(14, 14)      // returns [+DI, -DI, ADX] IN THAT ORDER
+eF     = ta.ema(close, sFast)
+eS     = ta.ema(close, sSlow)
+e13    = ta.ema(close, 13)
+e48    = ta.ema(close, 48)
+e12    = ta.ema(close, 12)
+e100   = ta.ema(close, 100)
+netMv  = math.abs(close - close[20])
+totMv  = math.sum(math.abs(close - close[1]), 20)
+effRat = totMv > 0 ? netMv / totMv : na
+sumTr  = math.sum(ta.tr(true), 14)
+rng14  = ta.highest(high, 14) - ta.lowest(low, 14)
+chop14 = rng14 > 0 and sumTr > 0 ? 100 * math.log10(sumTr / rng14) / math.log10(14) : na
+
+// BARE `hour` AND `minute` ARE EXCHANGE TIME IN PINE -- Chicago for CME. Read New York explicitly.
+modNY  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+inWin  = modNY >= winStart and modNY < winEnd
+ready  = not na(atrN) and atrN > 0 and not na(atrLim) and atrLim > 0
+
+okShort = useShort and ready and inWin and (not na(adxVal) and adxVal >= sAdx) and eF < eS
+     and not na(sLo) and low < sLo
+regimeL = (not na(adxVal) and adxVal >= lAdx) and (not na(effRat) and effRat >= lEr)
+     and (not na(chop14) and chop14 <= lChop)
+okLong  = useLong and ready and regimeL and e13 > e48 and e12 > e100 and not na(lHi) and high > lHi
+
+// ----------------------------------------------------------------- state
+var float sigAtr   = na      // ATR FROZEN AT THE SIGNAL BAR; stop and target read this all trade
+var int   pendBar  = na
+var int   pendSide = 0
+var int   sideOn   = 0
+var int   lastCnt  = 0
+var int   closedBar = na     // the bar a position went flat on -- no re-arming on it
+
+// EVERY var-STATE BLOCK IS GUARDED, AND SO IS THE EXIT CALL -- docs/ib/STUDY_TICK_RECALC.md.
+if barstate.isconfirmed and strategy.position_size == 0 and lastCnt > 0
+    sigAtr := na
+    sideOn := 0
+    lastCnt := 0
+    closedBar := bar_index
+
+if barstate.isconfirmed and strategy.opentrades > lastCnt
+    sideOn := pendSide
+    pendBar := na
+    pendSide := 0
+    lastCnt := strategy.opentrades
+
+flat = strategy.position_size == 0 and (na(closedBar) or bar_index > closedBar)
+
+// ----------------------------------------------------------------- entry
+// ONE LIVE ORDER, AND IT IS NOT RE-PRICED. While the limit rests, new signals are IGNORED; at
+// expiry it is cancelled and the bar it was cancelled on may arm a new one. Re-pricing on every
+// fresh signal is the obvious alternative and it is strictly worse -- it chases the market and
+// gives back most of the leg (research/v15/v15_parity.py, arm = "replace").
+// The order price and the ATR are BOTH frozen at the bar the order is placed. The bracket rides
+// with the entry so the FILL BAR is covered: `loss` is measured by Pine from the ACTUAL fill.
+if barstate.isconfirmed and flat
+    if not na(pendBar) and bar_index - pendBar >= limWait
+        strategy.cancel_all()
+        pendBar := na
+        pendSide := 0
+    if na(pendBar)
+        if okShort
+            sigAtr := atrN
+            pendBar := bar_index
+            pendSide := -1
+            lTk = int(math.max(1, math.round(sStop * atrN / syminfo.mintick)))
+            px = limMult <= 0 ? na : close + limMult * atrLim
+            if na(px)
+                strategy.entry("S", strategy.short, qty = qty)
+            else
+                strategy.entry("S", strategy.short, qty = qty, limit = px)
+            // NO `profit` HERE. On the fill bar the limit filled because the bar traded UP to it;
+            // paying that same bar's low for the 2R target assumes the high came first and the low
+            // after -- one bar, both extremes, in our favour. That single assumption was worth a
+            // Sharpe of 11 on a rule-free test. The target starts on the NEXT bar, with "x".
+            strategy.exit("x0", from_entry = "S", loss = lTk)
+        else if okLong
+            sigAtr := atrN
+            pendBar := bar_index
+            pendSide := 1
+            lTk = int(math.max(1, math.round(lStop * atrN / syminfo.mintick)))
+            px = limMult <= 0 ? na : close - limMult * atrLim
+            if na(px)
+                strategy.entry("L", strategy.long, qty = qty)
+            else
+                strategy.entry("L", strategy.long, qty = qty, limit = px)
+            strategy.exit("x0", from_entry = "L", loss = lTk)
+
+// ----------------------------------------------------------------- exit
+// Working stop = the NEARER of the ATR stop and the exit channel, then CAPPED AT THIS BAR'S CLOSE.
+// A sell stop cannot rest above the market and a buy stop cannot rest below it. Left uncapped,
+// Pine triggers such an order at the next bar's OPEN, which books a gap the research never gave
+// itself; capping at the close of the bar the order is placed on is what the engine does.
+avg      = strategy.position_avg_price
+stopS    = na(avg) or na(sigAtr) ? na : avg + sStop * sigAtr
+stopL    = na(avg) or na(sigAtr) ? na : avg - lStop * sigAtr
+lvlS0    = na(stopS) ? sHi : (na(sHi) ? stopS : math.min(stopS, sHi))
+lvlL0    = na(stopL) ? lLo : (na(lLo) ? stopL : math.max(stopL, lLo))
+lvlS     = na(lvlS0) ? na : math.max(lvlS0, close)
+lvlL     = na(lvlL0) ? na : math.min(lvlL0, close)
+exitLvl  = sideOn < 0 ? lvlS : lvlL
+tpLvl    = sideOn < 0 and sTp > 0 and not na(avg) and not na(sigAtr) ? avg - sTp * sStop * sigAtr : na
+
+if barstate.isconfirmed and not flat and lastCnt > 0 and not na(exitLvl)
+    // "x0" covered the fill bar; "x" takes over. Cancel the first or both rest.
+    strategy.cancel("x0")
+    strategy.exit("x", stop = exitLvl, limit = tpLvl)
+
+// ----------------------------------------------------------------- plots
+plot(useShort ? sLo : na, "Donchian 30 low", color = color.new(color.aqua, 35))
+plot(useLong  ? lHi : na, "Donchian 30 high", color = color.new(color.teal, 45))
+plot(flat and not na(pendBar) and pendSide < 0 ? close + limMult * atrLim : na, "Resting limit",
+     color = color.new(color.orange, 0), style = plot.style_linebr, linewidth = 2)
+plot(flat and not na(pendBar) and pendSide > 0 ? close - limMult * atrLim : na, "Resting limit",
+     color = color.new(color.orange, 0), style = plot.style_linebr, linewidth = 2)
+plot(strategy.position_size == 0 ? na : exitLvl, "Working stop", color = color.fuchsia, style = plot.style_linebr)
+plot(strategy.position_size == 0 ? na : tpLvl,   "Target",       color = color.new(color.lime, 0), style = plot.style_linebr)
+bgcolor(inWin and useShort ? color.new(color.teal, 94) : na, title = "short entry window")
+
+onTf = timeframe.period == "15"
+var table hud = table.new(position.top_right, 1, 4, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, "V15 book - 2026 Sharpe 2.50, maxDD 9.2R, control p 0.010",
+         text_color = color.white, bgcolor = color.new(color.teal, 20))
+    table.cell(hud, 0, 1, onTf ? "15m chart" : "NOT 15m - studied on 15m only",
+         text_color = color.white, bgcolor = onTf ? color.new(color.teal, 45) : color.red)
+    table.cell(hud, 0, 2, "Size at 0.25% risk. MC p99 drawdown is 18R, not the 9 you see.",
+         text_color = color.white, bgcolor = color.new(color.orange, 20))
+    table.cell(hud, 0, 3, "Rests on a LIMIT entry unsettled at 1-minute resolution. Deep Backtesting required.",
+         text_color = color.white, bgcolor = color.new(color.red, 20))

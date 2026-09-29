@@ -1,0 +1,212 @@
+//@version=5
+// Turtle Long 15m with a FREE ENTRY WINDOW, defaulted to 07:00-11:00 New York as requested.
+//
+// ===================== THE ANSWER TO THE REQUEST, BEFORE THE CODE =====================
+// Asked: the best Sharpe and the smallest drawdown for 07:00-11:00 on 15 minutes. I searched
+// 102 configurations inside that window -- unit cap, ATR stop multiple, exit channel length and
+// all three gate thresholds -- ranking by SHARPE with drawdown beside it, never by profit.
+//
+// THE BEST 07:00-11:00 CONFIGURATION DOES NOT SURVIVE OUT OF SAMPLE. Nothing in that window did.
+//
+//   config (07:00-11:00, flat 11:00)          research            HOLDOUT
+//   no gate at all                    PF 0.65  Sharpe -2.28   PF 0.79  Sharpe -1.07
+//   shipped gate, 3 units, 2.0N       PF 1.03  Sharpe +0.06   PF 0.44  Sharpe -1.00
+//   best by Sharpe: 1 unit, 1.5N,     PF 1.23  Sharpe +0.57   PF 0.85  Sharpe -0.39
+//     ADX>=20, dist>=4.0, vol>=0.90     maxDD 325 pts          maxDD 751 pts
+//
+// AND IT IS THE WINDOW, NOT THE FLATTEN. Holding the same 07:00-11:00 entries and changing only
+// the exit policy leaves every variant negative on the holdout: flat at 11:00 PF 0.44, flat at
+// 16:00 PF 0.53, no flatten at all PF 0.45, no flatten with one unit PF 0.41. Removing the clock
+// does not rescue it, so the damage is in WHICH BREAKOUTS those hours contain, not in cutting
+// them short. For comparison the same gate with entries at any hour scores PF 1.56 on the same
+// holdout.
+//
+// WHERE THE EDGE ACTUALLY IS, and this is the useful part. By entry hour, both blocks:
+//
+//   window            research PF / Sharpe    HOLDOUT PF / Sharpe    holdout maxDD
+//   all hours              1.58 / 1.40            1.56 / 1.10            2,742
+//   07:00-11:00            1.38 / 0.66            0.42 / -1.44           2,979
+//   11:00-16:00            1.94 / 1.60            1.85 / 1.10            1,343
+//   16:00-20:00            3.08 / 1.33            1.92 / 1.05              741
+//   11:00-24:00            1.90 / 1.68            1.85 / 1.38            1,408
+//
+// 11:00 onward gives BOTH of the things asked for -- a better holdout Sharpe than trading every
+// hour (1.38 against 1.10) and roughly half the drawdown (1,408 against 2,742). 07:00-11:00 is
+// the single worst window tested. THE HONEST CAVEAT: that hour table was read on both blocks, so
+// choosing 11:00-24:00 from it is partly a choice made on the holdout and has not been validated
+// on anything held back afterwards. The 07:00-11:00 result is the clean one, because that window
+// was specified by the request rather than found by searching.
+//
+// TWO STRUCTURAL FINDINGS FROM THE SEARCH, both worth knowing:
+//   * THE CHANNEL EXIT IS INERT INSIDE A SHORT WINDOW. Exit lengths of 5, 10 and 20 bars give
+//     bit-identical results, because the median hold is 2 bars and NO trade reaches 15. A 10-bar
+//     channel low cannot bind before the clock does. Inside a four-hour window this is not a
+//     Turtle system, it is an ATR stop and a clock wearing Turtle clothing.
+//   * ONE UNIT IS THE LOWEST-DRAWDOWN ANSWER, by a lot: 318 points against 1,267 for four units
+//     on the same research trades. Four units scored the WORST Sharpe of all 48 risk cells
+//     (-1.74). If you run this window, run it small.
+//
+// The window below is FREE. It is defaulted to 07:00-11:00 because that is what was asked for,
+// and the HUD turns red on any window measured negative out of sample so the choice is never
+// invisible in a screenshot. Set `useWindow` false to get the validated all-hours configuration.
+// ONLY NQ was used for the hour analysis. ES was requested and has never been supplied.
+// ======================================================================================
+
+strategy("Turtle Long 15m (session window)", overlay = true, pyramiding = 4,
+         default_qty_type = strategy.fixed, default_qty_value = 1,
+         initial_capital = 100000, calc_on_every_tick = false,
+         process_orders_on_close = false,
+         commission_type = strategy.commission.cash_per_order,
+         commission_value = 0.72, slippage = 2)
+
+// ===================== STRATEGY TESTER PROPERTIES =====================
+//   Script execution   ON BAR CLOSE only. See docs/ib/STUDY_TICK_RECALC.md.
+//   Bar detalization   High, with Deep Backtesting.       Order execution delay  One tick.
+//   Commission         CASH PER ORDER, per side. MNQ ~$0.72, NQ ~$2.05. A 3-unit ladder pays
+//                      it six times. PERCENT only on crypto or FX.
+//   Slippage           2 ticks -- a stop fills INTO the move that triggered it.
+//   Leverage Infinity  stops silent order rejection; then read DOLLAR drawdown, not %.
+// ======================================================================
+
+gW        = "Entry window (free)"
+useWindow = input.bool(true, "Restrict ENTRIES to a window", group = gW)
+startH    = input.int(7,  "Start hour (New York)",  minval = 0, maxval = 23, group = gW, inline = "a")
+startM    = input.int(0,  "Start minute",           minval = 0, maxval = 59, group = gW, inline = "a")
+endH      = input.int(11, "Last entry hour",        minval = 0, maxval = 23, group = gW, inline = "b")
+endM      = input.int(0,  "Last entry minute",      minval = 0, maxval = 59, group = gW, inline = "b")
+useFlat   = input.bool(true, "Also flatten at the window end", group = gW,
+     tooltip = "Measured: removing the flatten does NOT rescue the 07:00-11:00 window (holdout PF 0.45 without it against 0.44 with it). The damage is in which breakouts those hours contain.")
+
+gR       = "Regime gate"
+adxMin   = input.float(20.0, "ADX floor (the shipped rule had a CEILING of 22)", minval = 0, step = 1, group = gR)
+distMin  = input.float(3.0,  "EMA100 distance floor in ATR (the shipped rule had a CEILING)", minval = 0, step = 0.1, group = gR)
+volMin   = input.float(1.10, "ATR expansion floor, ATR(20)/mean(ATR,200)", minval = 0, step = 0.05, group = gR)
+
+gT       = "Turtle structure"
+entry1   = input.int(20, "Entry 1 (bars)", minval = 2, group = gT)
+entry2   = input.int(55, "Entry 2 (bars)", minval = 2, group = gT)
+exit1    = input.int(10, "Exit 1 (bars)",  minval = 2, group = gT,
+     tooltip = "Inert inside a short window: 5, 10 and 20 give identical results because the median hold is 2 bars and no trade reaches 15.")
+exit2    = input.int(20, "Exit 2 (bars)",  minval = 2, group = gT)
+atrLen   = input.int(20, "ATR length",     minval = 2, group = gT)
+atrMult  = input.float(2.0, "ATR stop multiple", minval = 0.1, step = 0.1, group = gT)
+pyrStep  = input.float(0.5, "Pyramid step (N)",  minval = 0.0, step = 0.05, group = gT)
+maxUnits = input.int(3, "Max units", minval = 1, maxval = 4, group = gT,
+     tooltip = "ONE unit is the lowest-drawdown answer inside a window -- 318 points against 1,267 for four on the same trades -- and four units scored the worst Sharpe of all 48 risk cells tested. Default 3 is the all-hours choice.")
+skipWin  = input.bool(true, "Skip after a winning trade", group = gT)
+unitQty  = input.float(1.0, "Units per Turtle unit", minval = 0.01, step = 0.01, group = gT)
+
+// ----------------------------------------------------------------- clock
+// NEW YORK explicitly: bare hour/minute are EXCHANGE time (Chicago for CME).
+mod    = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+winA   = startH * 60 + startM
+winB   = endH * 60 + endM
+inWin  = not useWindow or (mod >= winA and mod < winB)
+mustGo = useWindow and useFlat and mod >= winB
+
+// ----------------------------------------------------------------- series
+atrN    = ta.atr(atrLen)
+chanHi1 = ta.highest(high, entry1)
+chanHi2 = ta.highest(high, entry2)
+chanLo1 = ta.lowest(low,  exit1)
+chanLo2 = ta.lowest(low,  exit2)
+ema100  = ta.ema(close, 100)
+// ta.dmi returns [+DI, -DI, ADX] IN THAT ORDER.
+[_pdi, _mdi, adxVal] = ta.dmi(14, 14)
+atrLong = ta.sma(atrN, 200)
+distEma = atrN > 0 ? (close - ema100) / atrN : na
+volRat  = atrLong > 0 ? atrN / atrLong : na
+
+okAdx  = adxVal  >= adxMin
+okDist = distEma >= distMin
+okVol  = volRat  >= volMin
+ready  = not na(atrN) and atrN > 0 and not na(distEma) and not na(volRat) and not na(adxVal)
+score  = (okAdx ? 1 : 0) + (okDist ? 1 : 0) + (okVol ? 1 : 0)
+gateOk = ready and inWin and score >= 3
+
+// ----------------------------------------------------------------- state
+var float stopLvl   = na
+var float nextAdd   = na
+var float firstFill = na
+var float pendAtr   = na
+var int   unitsOn   = 0
+var int   sysOn     = 0
+var int   lastCount = 0
+var bool  lastWin   = false
+
+// EVERY var-STATE BLOCK IS GUARDED, AND SO IS THE EXIT CALL. Guarding only part of a coupled set
+// desynchronises it rather than partly fixing it -- see docs/ib/STUDY_TICK_RECALC.md.
+if barstate.isconfirmed and strategy.position_size == 0 and lastCount > 0
+    lastWin   := close > firstFill
+    unitsOn   := 0
+    sysOn     := 0
+    stopLvl   := na
+    nextAdd   := na
+    lastCount := 0
+
+if barstate.isconfirmed and strategy.opentrades > lastCount
+    fillPx    = strategy.opentrades.entry_price(strategy.opentrades - 1)
+    anchorAtr = na(pendAtr) ? atrN : pendAtr
+    if lastCount == 0
+        firstFill := fillPx
+    stopLvl   := fillPx - atrMult * anchorAtr
+    nextAdd   := fillPx + pyrStep * anchorAtr
+    unitsOn   := strategy.opentrades
+    lastCount := strategy.opentrades
+
+flat = strategy.position_size == 0
+
+// ----------------------------------------------------------------- entries
+sig2 = high > chanHi2[1]
+sig1 = high > chanHi1[1]
+
+if barstate.isconfirmed and flat and gateOk
+    if sig2
+        strategy.entry("S2", strategy.long, qty = unitQty)
+        sysOn   := 2
+        pendAtr := atrN
+    else if sig1
+        if skipWin and lastWin
+            lastWin := false
+        else
+            strategy.entry("S1", strategy.long, qty = unitQty)
+            sysOn   := 1
+            pendAtr := atrN
+
+if barstate.isconfirmed and not flat and unitsOn > 0 and unitsOn < maxUnits and pyrStep > 0
+    if high >= nextAdd
+        strategy.entry("add" + str.tostring(unitsOn + 1), strategy.long, qty = unitQty)
+        pendAtr := atrN
+
+// ----------------------------------------------------------------- exit
+chanExit  = sysOn == 1 ? chanLo1[1] : chanLo2[1]
+exitLevel = na(stopLvl) ? chanExit : (na(chanExit) ? stopLvl : math.max(stopLvl, chanExit))
+
+if barstate.isconfirmed and not flat and lastCount > 0 and not na(exitLevel)
+    strategy.exit("x", stop = exitLevel)
+
+if mustGo and strategy.position_size != 0
+    strategy.close_all(comment = "flat")
+
+// ----------------------------------------------------------------- plots
+plot(chanHi1, "Entry 1 (20-bar high)", color = color.new(color.aqua, 40))
+plot(chanHi2, "Entry 2 (55-bar high)", color = color.new(color.blue, 40))
+plot(ema100,  "EMA100",                color = color.new(color.orange, 50))
+plot(flat ? na : exitLevel, "Active stop", color = color.fuchsia, style = plot.style_linebr)
+bgcolor(useWindow and inWin ? color.new(color.teal, 92) : na)
+
+// A window measured negative out of sample must never be invisible in a screenshot.
+badWin  = useWindow and winA < 660          // anything starting before 11:00 New York
+onTf    = timeframe.period == "15"
+var table hud = table.new(position.top_right, 1, 3, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, useWindow ?
+         "entries " + str.tostring(startH) + ":" + str.format("{0,number,00}", startM) + "-" +
+         str.tostring(endH) + ":" + str.format("{0,number,00}", endM) + " NY" : "entries: all hours",
+         text_color = color.white, bgcolor = useWindow ? color.new(color.orange, 20) : color.new(color.teal, 40))
+    table.cell(hud, 0, 1, badWin ?
+         "THIS WINDOW MEASURED NEGATIVE OUT OF SAMPLE (07:00-11:00 holdout PF 0.42) - 11:00 onward held" :
+         "window not measured negative out of sample",
+         text_color = color.white, bgcolor = badWin ? color.red : color.new(color.teal, 40))
+    table.cell(hud, 0, 2, onTf ? "15m chart" : "NOT 15m - measured on 15m only",
+         text_color = color.white, bgcolor = onTf ? color.new(color.teal, 40) : color.red)

@@ -1,0 +1,84 @@
+
+==========================================================================================================================
+4. THE THREE CANDIDATES
+==========================================================================================================================
+   TOP  (best research PF)        tf=30  don_e=70  don_x=30  stop_n=2.5  tp_r=0.0  lr_len=50  lr_read=both  ma_len=250  ma_read=lrma>ma
+   CONSENSUS (top-100 mode)       tf=30  don_e=70  don_x=30  stop_n=2.5  tp_r=0.0  lr_len=50  lr_read=both  ma_len=250  ma_read=lrma>ma
+   ROBUST (best neighbourhood)    tf=30  don_e=70  don_x=30  stop_n=2.5  tp_r=0.0  lr_len=80  lr_read=slope>0  ma_len=250  ma_read=close>ma
+
+   TOP's neighbourhood mean PF 1.759 against its own 1.909 -- a gap of +0.150 is how much of it is a spike
+   ROBUST's own PF 1.876, neighbourhood 1.778
+
+==========================================================================================================================
+5. THE LOCKED BLOCK -- read ONCE, after every choice above was made
+==========================================================================================================================
+
+   TOP  (best research PF)
+      NQ research                    n   131  PF  1.909  $/trade   +73.03  win 0.420  Sharpe  +1.67  DD $     896  ret/DD 10.68  net $    +9,568
+      NQ LOCKED                      n    68  PF  0.907  $/trade   -13.09  win 0.338  Sharpe  -0.22  DD $   3,592  ret/DD -0.25  net $      -890
+      decay: PF 1.909 -> 0.907   $/trade +73.03 -> -13.09   RIGHT shape (research > locked)
+      locked exit mix: stop 46%  channel 54%
+
+   CONSENSUS (top-100 mode)
+      NQ research                    n   131  PF  1.909  $/trade   +73.03  win 0.420  Sharpe  +1.67  DD $     896  ret/DD 10.68  net $    +9,568
+      NQ LOCKED                      n    68  PF  0.907  $/trade   -13.09  win 0.338  Sharpe  -0.22  DD $   3,592  ret/DD -0.25  net $      -890
+      decay: PF 1.909 -> 0.907   $/trade +73.03 -> -13.09   RIGHT shape (research > locked)
+      locked exit mix: stop 46%  channel 54%
+
+   ROBUST (best neighbourhood)
+      NQ research                    n   134  PF  1.876  $/trade   +72.97  win 0.410  Sharpe  +1.63  DD $   1,166  ret/DD  8.39  net $    +9,778
+      NQ LOCKED                      n    79  PF  0.832  $/trade   -22.88  win 0.291  Sharpe  -0.48  DD $   4,239  ret/DD -0.43  net $    -1,808
+      decay: PF 1.876 -> 0.832   $/trade +72.97 -> -22.88   RIGHT shape (research > locked)
+      locked exit mix: stop 51%  channel 49%
+
+==========================================================================================================================
+6. TWO MARKETS THAT HAD NO PART IN THE SEARCH
+==========================================================================================================================
+   US30 8.7 years and US100 8.9 years, frozen configurations, each market charged its
+   OWN tick and point value. US100 before 2022-12-26 is unseen by every NQ study here.
+
+   --- US30L  ($5/point)
+      TOP  (best researc 30m all     n   523  PF  1.317  $/trade  +119.94  win 0.340  Sharpe  +0.63  DD $  23,362  ret/DD  2.69  net $   +62,729
+      TOP  (best researc 30m pre-2023 n   369  PF  1.346  $/trade  +115.50  win 0.355  Sharpe  +0.71  DD $   8,574  ret/DD  4.97  net $   +42,621
+      CONSENSUS (top-100 30m all     n   523  PF  1.317  $/trade  +119.94  win 0.340  Sharpe  +0.63  DD $  23,362  ret/DD  2.69  net $   +62,729
+      CONSENSUS (top-100 30m pre-2023 n   369  PF  1.346  $/trade  +115.50  win 0.355  Sharpe  +0.71  DD $   8,574  ret/DD  4.97  net $   +42,621
+      ROBUST (best neigh 30m all     n   551  PF  1.324  $/trade  +122.85  win 0.354  Sharpe  +0.66  DD $  21,663  ret/DD  3.12  net $   +67,689
+      ROBUST (best neigh 30m pre-2023 n   387  PF  1.364  $/trade  +123.69  win 0.372  Sharpe  +0.75  DD $  11,867  ret/DD  4.03  net $   +47,867
+
+   --- US100L  ($2/point)
+      TOP  (best researc 30m all     n   613  PF  1.253  $/trade   +19.91  win 0.351  Sharpe  +0.54  DD $   4,007  ret/DD  3.05  net $   +12,208
+      TOP  (best researc 30m pre-2023 n   413  PF  1.165  $/trade   +11.27  win 0.339  Sharpe  +0.35  DD $   3,576  ret/DD  1.30  net $    +4,656
+      CONSENSUS (top-100 30m all     n   613  PF  1.253  $/trade   +19.91  win 0.351  Sharpe  +0.54  DD $   4,007  ret/DD  3.05  net $   +12,208
+      CONSENSUS (top-100 30m pre-2023 n   413  PF  1.165  $/trade   +11.27  win 0.339  Sharpe  +0.35  DD $   3,576  ret/DD  1.30  net $    +4,656
+      ROBUST (best neigh 30m all     n   621  PF  1.332  $/trade   +25.88  win 0.372  Sharpe  +0.68  DD $   4,161  ret/DD  3.86  net $   +16,070
+      ROBUST (best neigh 30m pre-2023 n   416  PF  1.386  $/trade   +24.73  win 0.370  Sharpe  +0.73  DD $   3,112  ret/DD  3.31  net $   +10,287
+
+==========================================================================================================================
+7. DEFLATED SHARPE AS A CURVE -- the assumption does the work, so state it
+==========================================================================================================================
+
+   TOP  (best research PF)
+      N =       1   SR -0.222   null SR +0.458   DSR 0.2267
+      N =      10   SR -0.222   null SR +1.389   DSR 0.0380
+      N =     100   SR -0.222   null SR +2.232   DSR 0.0034
+      N =   1,000   SR -0.222   null SR +2.871   DSR 0.0003
+      N =  10,000   SR -0.222   null SR +3.405   DSR 0.0000
+      N = 113,400   SR -0.222   null SR +3.896   DSR 0.0000
+
+   CONSENSUS (top-100 mode)
+      N =       1   SR -0.222   null SR +0.458   DSR 0.2267
+      N =      10   SR -0.222   null SR +1.389   DSR 0.0380
+      N =     100   SR -0.222   null SR +2.232   DSR 0.0034
+      N =   1,000   SR -0.222   null SR +2.871   DSR 0.0003
+      N =  10,000   SR -0.222   null SR +3.405   DSR 0.0000
+      N = 113,400   SR -0.222   null SR +3.896   DSR 0.0000
+
+   ROBUST (best neighbourhood)
+      N =       1   SR -0.481   null SR +0.458   DSR 0.1634
+      N =      10   SR -0.481   null SR +1.389   DSR 0.0255
+      N =     100   SR -0.481   null SR +2.232   DSR 0.0023
+      N =   1,000   SR -0.481   null SR +2.871   DSR 0.0002
+      N =  10,000   SR -0.481   null SR +3.405   DSR 0.0000
+      N = 113,400   SR -0.481   null SR +3.896   DSR 0.0000
+
+   elapsed 12s

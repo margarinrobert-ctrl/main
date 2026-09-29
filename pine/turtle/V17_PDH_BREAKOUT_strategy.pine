@@ -1,0 +1,224 @@
+//@version=5
+// V17 -- the one engineered feature that survived. A Donchian breakout pays when, and only when,
+// it is ALSO above the last completed regular-session high.
+//
+// ================================ WHAT THIS ADDS ================================
+// The base is V11, re-measured rather than inherited: Donchian 55 entry / 20 exit, ADX(14) >= 25,
+// stop 2.5 x ATR(20), one unit, no take profit, LONG, market order at the next open, NQ 15-minute.
+// V17 adds one filter -- **the signal bar's close must be at or above the high of the last
+// completed 09:30-16:00 New York session.**
+//
+//   block      filter   trades   net R   R/trade      PF    win%   Sharpe   maxDD   R/DD
+//   research   off         333   +55.9   +0.1680   1.328   38.14%   1.08     16.4R   3.41
+//   research   ON          238   +63.0   +0.2649   1.566   42.02%   1.38     11.6R   5.46
+//   LOCKED     off         174   +23.6   +0.1356   1.308   37.93%   1.05     14.3R   1.65
+//   LOCKED     ON          129   +41.2   +0.3191   1.780   43.41%   1.55      9.0R   4.56
+//
+// Profit factor 1.31 -> 1.78 and Sharpe 1.05 -> 1.55 out of sample, on 26% fewer trades and 37%
+// less drawdown. **Sharpe here is computed over EVERY trading day in the block, zero-filled on days
+// that did not trade** -- over traded days only, a filter is paid for trading less, and this one
+// would look far better than it is.
+//
+// ================================ WHY THIS ONE AND NOT THE OTHERS ================================
+// **THE POOL AS A WHOLE FOUND NOTHING.** 21 engineered features x 6 levels x 2 directions = 285
+// scorable conditions. 16 beat a random filter of the same selectivity on Sharpe at p <= 0.05
+// against **14.2 expected by chance**; on net R only 7 passed against 14.2 expected, which is worse
+// than chance. Read that before reading anything below.
+//
+// This condition was carried on SHAPE, not rank -- it was not even the best cell. It is the only
+// feature in the pool whose entire ladder is sign-consistent in both directions on research:
+//
+//   below the session high   -2.0N: -0.103   -0.5N: -0.060   0.0: -0.046   +0.5N: -0.040  R/trade
+//   above the session high   -0.5N: +0.233    0.0: +0.265   +0.5N: +0.251   +1.5N: +0.364  R/trade
+//
+// Every rung of one side loses and every rung of the other wins. **And the gradient replicated out
+// of sample**, which is the part a lucky cell cannot do:
+//
+//   LOCKED           <= level              >= level
+//   -2.0N       -0.153 R/trade        +0.199 R/trade
+//   -0.5N       +0.050               +0.195
+//    0.0        +0.017               +0.319      <- shipped
+//   +0.5N       +0.057               +0.295
+//   +1.5N       +0.166               +0.244
+//
+// The level shipped is **0** and not the +1.5N that scores best on research: zero is the boundary
+// the feature already has, needs no parameter, and keeps 49 more trades.
+//
+// ================================ WHAT IT IS NOT ================================
+// It is not the daily trend, and it is not the prior close. Both were in the same pool with the
+// same controls and neither works:
+//
+//   condition                          trades   R/trade      PF   Sharpe        p
+//   close >= last session HIGH            238   +0.2649   1.566     1.38   0.0067   <- this
+//   close >= last session CLOSE           322   +0.1809   1.354     1.13   0.1500
+//   daily ADX >= 15                       301   +0.1850   1.367     1.12   0.2267
+//   daily close > EMA200                  327   +0.1530   1.297     0.99   0.9900
+//   daily EMA20 > EMA50                   277   +0.1372   1.265     0.81   0.9933
+//   daily uptrend AND daily ADX > 20      176   +0.1771   1.337     0.75   0.9467
+//   daily +DI > -DI                       234   +0.1028   1.199     0.56   1.0000
+//
+// A LEVEL, not a trend, and specifically the HIGH. The reading is that a 55-bar channel break on 15
+// minutes and a break of yesterday's session high are two different levels agreeing, and the trade
+// is worth taking when they do.
+//
+// ================================ THE CONTROL, WHICH THE BASE FAILS ================================
+// Random entries with the same side, geometry and minute-of-day mix, 2,000 draws:
+//
+//                     research            LOCKED
+//   base only      p = 0.0135          p = 0.2130    <- the base does NOT clear its control here
+//   + this filter  p = 0.0055          p = 0.0140    (x2 = 0.0280 for the two conditions read)
+//
+// The filter is what makes the strategy clear a control it otherwise fails out of sample. Bootstrap
+// on the locked daily series: P(mean daily R <= 0) = **0.0234**. Drop a random 10% of days and the
+// locked Sharpe p5 is 1.18, median 1.57.
+//
+// **AND THE HONEST CEILING ON THAT NUMBER:** 285 conditions were searched on research. Bonferroni
+// over the whole search puts 0.014 x 285 well past 1, so the p-value is not the evidence -- the
+// evidence is that the GRADIENT, not just the cell, reproduced on a block it was not chosen on.
+// Treat it as one replication, not as a settled result.
+//
+// ================================ THE RUNNER-UP, WHICH SHIPS OFF ================================
+// `close - channel <= 0.1 x ATR` -- the rule against chasing a break that has already run -- was
+// the other condition strong enough on research to spend a holdout read on: four consecutive rungs
+// at p 0.003-0.037 with the opposite direction uniformly worse.
+//
+//   research   293 trades  +0.2544 R/trade  PF 1.536  Sharpe 1.48   control p 0.0005
+//   LOCKED     155 trades  +0.1522 R/trade  PF 1.374  Sharpe 1.20   control p 0.1725   <- fails
+//
+// It is available as an input and defaults OFF. Turning it on WITH the shipped filter gives the
+// best numbers in the whole study -- locked 109 trades, +0.3961 R/trade, PF 2.068, Sharpe 1.71,
+// control p 0.0040 -- but its own solo read failed, so its marginal contribution is not
+// established and 109 trades is thin. That combination is a measurement, not a recommendation.
+//
+// ================================ PARITY ================================
+// Two things had to match, not one. The session-high series the script builds on its own bars is
+// **identical to the tick** to the research construction (which aggregates 1-minute bars and maps
+// each intraday bar to the last session closing strictly before it), and the CONDITION agrees on
+// **100.0000%** of bars. The order model then matches the engine at 100% signal match, 100%
+// exit-bar match and correlation 1.0000, filter on and off, on both blocks.
+// A leakage assertion is part of the harness: zero bars map to a session that had not closed.
+//
+// ================================ COSTS ================================
+// MNQ, itemised: broker + exchange + clearing + NFA per side, half a one-tick spread, and slippage
+// scaled by the bar's true range against the series median, doubled outside 09:30-16:00, with an
+// extra tick on a stop fill.
+// ==========================================================================================
+
+strategy("V17 Donchian 55 + prior session high", overlay = true, pyramiding = 0,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 100000, calc_on_every_tick = false, process_orders_on_close = false,
+     commission_type = strategy.commission.cash_per_order, commission_value = 0.72, slippage = 2)
+
+// ===================== STRATEGY TESTER PROPERTIES =====================
+//   Script execution   ON BAR CLOSE only -- see docs/ib/STUDY_TICK_RECALC.md.
+//   Slippage           2 ticks. Entry is a market order and the exit is a stop; both cross.
+//   Leverage Infinity  stops silent order rejection; then read DOLLAR drawdown, not %.
+//   Timeframe          15 minutes. The base was compared at 15m and 30m and 15m won on both blocks.
+// ======================================================================
+
+gE       = "Entry"
+donLen   = input.int(55, "Donchian breakout length", minval = 2, group = gE)
+adxMin   = input.float(25, "ADX(14) floor", minval = 0, step = 1, group = gE,
+     tooltip="25, not 15. Reproduced independently here: without it the base falls from +0.1680 to +0.0574 R/trade on research and from +0.1356 to +0.1091 on locked.")
+usePdh   = input.bool(true, "Require close >= last session high", group = gE,
+     tooltip="The engineered filter. Locked: profit factor 1.308 -> 1.780, Sharpe 1.05 -> 1.55, drawdown 14.3R -> 9.0R, and it is what makes the strategy clear a matched control it otherwise fails out of sample.")
+pdhSess  = input.session("0930-1600", "Session whose high is used, New York", group = gE)
+useChase = input.bool(false, "Also require the break to be un-extended", group = gE,
+     tooltip="close - channel <= 0.1 x ATR, the rule against chasing. Research control p 0.0005, LOCKED control p 0.1725 -- it failed its own holdout read, so it ships off. With the filter above it gives locked PF 2.068 and Sharpe 1.71 on 109 trades, which is a measurement, not a recommendation.")
+chaseMax = input.float(0.1, "  maximum extension, x ATR", step = 0.05, group = gE)
+
+gX       = "Exit"
+atrLen   = input.int(20, "ATR length", minval = 2, group = gX,
+     tooltip="ATR here is ema(TR, n), NOT ta.atr -- ta.atr is Wilder's RMA and a different series. Every level in this script is sized in the EMA form because the research layer is.")
+stopMult = input.float(2.5, "ATR stop multiple", minval = 0.1, step = 0.1, group = gX)
+exitCh   = input.int(20, "Donchian exit channel", minval = 2, group = gX)
+qty      = input.int(1, "Contracts", minval = 1, group = gX)
+
+// ----------------------------------------------------------------- series
+atrN   = ta.ema(ta.tr(true), atrLen)
+// ENTRY channel excludes the current bar so a break is possible.
+entHi  = ta.highest(high, donLen)[1]
+// EXIT channel takes NO [1]: the order is placed at this bar's close and is live on the next, so
+// this is the window the engine reads on the bar it fires.
+exLo   = ta.lowest(low, exitCh)
+[_pdi, _mdi, adxVal] = ta.dmi(14, 14)      // returns [+DI, -DI, ADX] IN THAT ORDER
+
+// THE LAST COMPLETED SESSION HIGH, accumulated on this chart's own bars and frozen when the session
+// ends. `request.security` on a daily bar would give the 24-hour futures high, which is a different
+// number; this tracks the 09:30-16:00 New York session the research uses, and it was verified
+// identical to the tick against that construction.
+// BARE `hour`/`minute` ARE EXCHANGE TIME IN PINE -- Chicago for CME -- so the session is resolved
+// with an explicit timezone.
+inRTH  = not na(time(timeframe.period, pdhSess, "America/New_York"))
+var float curHi  = na
+var float lastHi = na
+if barstate.isconfirmed
+    if inRTH and not inRTH[1]
+        curHi := high
+    else if inRTH
+        curHi := na(curHi) ? high : math.max(curHi, high)
+    if not inRTH and inRTH[1] and not na(curHi)
+        lastHi := curHi
+
+ready   = not na(atrN) and atrN > 0
+pdhOk   = not usePdh or (not na(lastHi) and close >= lastHi)
+chaseOk = not useChase or (not na(entHi) and close - entHi <= chaseMax * atrN)
+sigL    = ready and pdhOk and chaseOk and (not na(adxVal) and adxVal >= adxMin)
+     and not na(entHi) and high > entHi
+
+// ----------------------------------------------------------------- state
+var float sigAtr    = na     // ATR FROZEN AT THE SIGNAL BAR; the stop distance reads this all trade
+var int   lastCnt   = 0
+var int   closedBar = na
+
+// EVERY var-STATE BLOCK IS GUARDED, AND SO IS THE EXIT CALL -- docs/ib/STUDY_TICK_RECALC.md.
+if barstate.isconfirmed and strategy.position_size == 0 and lastCnt > 0
+    sigAtr := na
+    lastCnt := 0
+    closedBar := bar_index
+
+if barstate.isconfirmed and strategy.opentrades > lastCnt
+    lastCnt := strategy.opentrades
+
+// A position cannot re-arm on the bar it closed on: the engine's lock requires the next signal to
+// be strictly after the exit bar, and Pine is already flat at that bar's close.
+flat = strategy.position_size == 0 and (na(closedBar) or bar_index > closedBar)
+
+// ----------------------------------------------------------------- entry, bracket riding with it
+// THE EXIT MUST BE LIVE ON THE ENTRY BAR -- the engine starts its walk at the fill bar, so a
+// bracket that waits for the next bar leaves the first bar of every trade uncovered.
+// `stop` and `loss` together give exactly max(ATR stop, channel): Pine takes whichever produces the
+// SMALLER LOSS, which for a long is the HIGHER of the two prices. Two separate orders race.
+lvlL = math.min(exLo, close)      // a sell stop cannot rest above the market
+
+if barstate.isconfirmed and flat and sigL
+    sigAtr := atrN
+    strategy.entry("L", strategy.long, qty = qty)
+    strategy.exit("x", from_entry = "L", stop = lvlL,
+         loss = int(math.max(1, math.round(stopMult * atrN / syminfo.mintick))))
+
+// ----------------------------------------------------------------- exit, re-priced each bar
+if barstate.isconfirmed and strategy.position_size != 0 and lastCnt > 0 and not na(sigAtr)
+    strategy.exit("x", from_entry = "L", stop = lvlL,
+         loss = int(math.max(1, math.round(stopMult * sigAtr / syminfo.mintick))))
+
+// ----------------------------------------------------------------- plots
+plot(entHi, "Donchian 55 high", color = color.new(color.teal, 30))
+plot(lastHi, "Last session high", color = color.new(color.orange, 0), linewidth = 2,
+     style = plot.style_linebr)
+plot(strategy.position_size > 0 ? lvlL : na, "Working stop", color = color.fuchsia,
+     style = plot.style_linebr)
+bgcolor(usePdh and not na(lastHi) and close >= lastHi ? color.new(color.teal, 95) : na,
+     title = "above last session high")
+
+onTf = timeframe.period == "15"
+var table hud = table.new(position.top_right, 1, 4, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, "V17 - locked PF 1.78, Sharpe 1.55, maxDD 9.0R, control p 0.014",
+         text_color = color.white, bgcolor = color.new(color.teal, 20))
+    table.cell(hud, 0, 1, onTf ? "15m chart" : "NOT 15m - the base was chosen at 15m",
+         text_color = color.white, bgcolor = onTf ? color.new(color.teal, 45) : color.red)
+    table.cell(hud, 0, 2, usePdh ? "Session-high filter ON - PF 1.31 -> 1.78 out of sample" : "Filter OFF - this is the bare base, control p 0.213 on locked",
+         text_color = color.white, bgcolor = usePdh ? color.new(color.teal, 45) : color.new(color.orange, 20))
+    table.cell(hud, 0, 3, "The POOL was null: 16 of 285 passed, 14.2 expected. One replication, not a settled result.",
+         text_color = color.white, bgcolor = color.new(color.red, 20))

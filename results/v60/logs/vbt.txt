@@ -1,0 +1,49 @@
+====================================================================================================================
+10. VECTORBT SECOND OPINION on the leading configuration, GROSS of costs
+====================================================================================================================
+  EMA 21/62 cross, confirm within 40 bars, Donchian 10 entry / 10 exit, 3.0N stop, no target, adx>=20, aroon off
+
+  PASS 1 -- TRANSCRIPTION: are the two signal sets the same bars?
+  market     engine  vectorbt    both  eng only  vbt only  agreement     last disagreement
+  US100L       1352      1350    1348         4         2      99.6%      bar 63 of 51,889
+  NQ            483       482     482         1         0      99.8%      bar 32 of 18,243
+  US30L        1135      1134    1134         1         0      99.9%      bar 14 of 49,325
+     every disagreement is inside the EMA(62) warm-up; after it the two rules are the same bars.
+
+  PASS 2 -- ORDER MODEL: same bars, each engine's own execution
+  market  block       eng n  vbt n   count   eng pts   vbt pts     naive  eng win  vbt win
+  US100L  research      212    211   99.5%    +35.22    +30.97    +25.94    50.5%    49.3%
+  US100L  locked        139    138   99.3%    +17.36     +5.98     +5.61    38.1%    38.4%
+  NQ      research       83     81   97.6%    +41.28    +35.38    +31.99    45.8%    46.9%
+  NQ      locked         50     50  100.0%     +6.81    -12.28    -15.29    34.0%    34.0%
+  US30L   research      208    207   99.5%    +53.49    +45.40    +42.92    49.5%    49.8%
+  US30L   locked        103    103  100.0%    +14.94     -0.09    +12.93    40.8%    40.8%
+     `naive` is the same run with `sl_stop = stop_n * ATR / close`, the obvious way to write it.
+     vectorbt resolves that fraction against the bar's CLOSE, not the `price=` fill, so the stop
+     lands (close - open) away from the engine's. The gap between the two columns is that trap.
+
+  PASS 3 -- TRADE BY TRADE, matched on the fill bar, SPLIT BY EXIT REASON
+  market  block      matched  stop n  d bar     d px  chan n  d bar     d px     vbt fills at o / c / stop
+  US100L  research       210      31  +0.10    -9.37     179  +1.00    -3.43            80%  11%   9%
+  US100L  locked         138      26  +1.46   -10.66     112  +1.00   -10.29            73%  14%  13%
+  NQ      research        81      15  +2.60    +8.19      66  +1.00    -9.40            73%  15%  12%
+  NQ      locked          50       8  +0.00  -109.79      41  +1.00    -1.86            80%  18%   2%
+  US30L   research       207      32  +0.06   -17.49     175  +0.71    -7.00            79%  10%  11%
+  US30L   locked         103      18  +0.11   -44.74      85  +1.00    -8.74            77%  14%  10%
+
+  PASS 4 -- THE CHANNEL CONVENTION, MEASURED DIRECTLY rather than inferred from PASS 2.
+     The engine sells at the CLOSE of the bar that breaks the channel; a script sells at
+     the NEXT OPEN. That difference is exactly mean(open[j+1] - close[j]) over the
+     engine's own channel exits, and it is SMALL:
+  market  block       trades   stop   chan   hold  give-up per channel exit  worst single
+  US100L  research       212     31    181      0                     -0.21        -24.50
+  US100L  locked         139     26    113      0                     +0.10         -5.20
+  NQ      research        83     15     68      0                     -0.03         -1.00
+  NQ      locked          50      8     41      1                     -0.22         -3.25
+  US30L   research       208     33    175      0                     +0.55        -96.00
+  US30L   locked         103     18     85      0                     -0.31        -46.00
+     SO THE PASS-2 GAP IS NOT THE CONVENTION. It is vectorbt's own execution: its stop
+     exits land on the SAME bar as the engine's and price 9 to 110 points worse, and a
+     tenth to a fifth of its exits do not fill at the `price=` series at all. The
+     arbiter of what the SHIPPED SCRIPT does is `v60_parity.py`, which writes the
+     script's order model out directly and lands within -2.6% to +4.6% of the engine.

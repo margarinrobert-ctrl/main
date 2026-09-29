@@ -15,6 +15,10 @@ numba>=0.60
 pyarrow>=15.0
 scipy>=1.11
 
+# --- figures ---
+# 75 imports across research/; every plot_*.py sets the Agg backend, so no display is needed.
+matplotlib>=3.8
+
 # --- models ---
 scikit-learn>=1.5
 lightgbm>=4.5

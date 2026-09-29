@@ -1,0 +1,61 @@
+
+============================================================================================================================
+A. THE EXIT, TESTED FAIRLY -- every no-trail cell gets a real exit; RESEARCH block
+============================================================================================================================
+                                                         n  %/trade     PF  win%   $ 1 MNQ  hold  exits
+  -- trailing stop, tightening (the asked value is 1.0/1.0) --
+    trail 0.25 / 0.25 ATR                             2515   0.0237  1.751  75.2    21,260     1  trail84% stop16%
+    trail 0.5 / 0.25 ATR                              2327   0.0132  1.236  71.4    10,515     1  trail71% stop29%
+    trail 0.5 / 0.5 ATR                               2268   0.0034  1.061  65.0     2,325     1  trail71% stop29%
+    trail 0.75 / 0.5 ATR                              2110   0.0001  1.002  63.1        41     2  trail63% stop37%
+    trail 1.0 / 1.0 ATR                               1888  -0.0070  0.920  53.4    -4,771     3  trail57% stop43%
+    trail 2.0 / 2.0 ATR                               1366  -0.0101  0.923  36.8    -4,195     6  stop62% trail38%
+  -- no trail, but with a TARGET (so the trade can end in profit) --
+    no trail, target 0.5 ATR                          2362  -0.0118  0.790  71.4   -10,558     1  target71% stop29%
+    no trail, target 1.0 ATR                          2026  -0.0148  0.831  56.3   -11,228     2  target56% stop44%
+    no trail, target 1.5 ATR                          1789  -0.0196  0.823  45.6   -12,555     3  stop54% target46%
+    no trail, target 2.0 ATR                          1589  -0.0195  0.846  38.9   -10,773     4  stop61% target39%
+    no trail, target 3.0 ATR                          1348  -0.0119  0.919  31.6    -5,619     6  stop68% target32%
+  -- no trail, no target, but a MAX HOLD in bars --
+    no trail, max hold 4 bars                         2143  -0.0223  0.736  38.5   -17,742     4  hold63% stop37%
+    no trail, max hold 8 bars                         1892  -0.0195  0.807  36.3   -13,047     8  hold51% stop49%
+    no trail, max hold 16 bars                        1646  -0.0143  0.879  30.0    -8,346     9  stop60% hold40%
+    no trail, max hold 32 bars                        1405  -0.0134  0.900  25.3    -6,897     8  stop70% hold30%
+    no trail, max hold 96 bars                         914   0.0051  1.030  16.3     2,447    10  stop83% hold17%
+  -- the degenerate arm, shown so the grid marginal is not misread --
+    no trail, no target, no hold cap                   110  -0.0040  0.985   1.8    -1,024    20  stop98% target2%
+
+============================================================================================================================
+B. DROP-ONE at the best-behaved geometry, and what absorption is worth
+============================================================================================================================
+                                                         n  %/trade     PF  win%   $ 1 MNQ  hold  exits
+  full rule (mid + swings, absorption, tight trail)   2268   0.0034  1.061  65.0     2,325     1  trail71% stop29%
+    - absorption removed                              5052   0.0096  1.181  66.6    18,235     1  trail74% stop26%
+    - levels removed (absorption alone)               5502   0.0088  1.159  67.0    17,615     1  trail73% stop27%
+    absorption threshold scaledVol >= 0.5             1016   0.0122  1.173  68.3     3,707     1  trail73% stop27%
+    absorption threshold scaledVol >= 1.0              876   0.0088  1.119  68.0     2,075     1  trail72% stop28%
+    absorption threshold scaledVol >= 2.0              445   0.0221  1.320  68.8     3,078     0  trail73% stop27%
+    absorption threshold scaledVol >= 4.0               88   0.0234  1.371  71.6       706     0  trail75% stop25%
+    midline only                                      1341   0.0064  1.116  65.5     2,524     2  trail72% stop28%
+    swings only                                       1380   0.0018  1.031  64.3       753     1  trail71% stop29%
+    longs only                                        1392   0.0099  1.191  66.0     4,696     1  trail73% stop27%
+    shorts only                                       1188   0.0002  1.003  64.1      -178     1  trail70% stop30%
+    zero cost                                         2280   0.0143  1.279  73.4    11,455     1  trail73% stop27%
+    2x cost                                           2267  -0.0065  0.893  58.8    -5,916     1  trail70% stop30%
+
+============================================================================================================================
+C. CONTROLS at the best-behaved geometry (research block)
+============================================================================================================================
+  tight-trail rule: n=2268  observed +0.0034  PF 1.061
+     random ENTRY  median +0.0072  5-95% [+0.0011, +0.0125]  p 0.840
+     random FILTER median +0.0086  5-95% [+0.0042, +0.0136]  p 0.970
+
+============================================================================================================================
+D. CROSS-MARKET -- the SAME rule, unchanged, on feeds that had no part in any of this
+============================================================================================================================
+  NOTE: US100/US30 carry TICK volume, so their absorption is a proxy of a proxy.
+                                                         n  %/trade     PF  win%   $ 1 MNQ  hold  exits
+    US100 15m tight trail [research]                  7338  -0.0010  0.987  60.6     1,157     2  trail72% stop28%
+    US100 15m tight trail [locked]                    4067   0.0087  1.132  67.3     5,848     2  trail73% stop27%
+    US30 15m tight trail [research]                   7671   0.0031  1.056  63.0     7,018     2  trail73% stop27%
+    US30 15m tight trail [locked]                     3967   0.0095  1.202  66.7    14,221     2  trail74% stop26%

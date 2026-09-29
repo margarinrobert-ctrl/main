@@ -4,26 +4,33 @@ import { useEffect, useState } from "react";
 import type { NormalizedQuote } from "@/lib/barchart/types";
 import { loadQuote } from "@/lib/client-data";
 import { withBase } from "@/lib/paths";
+import { Provenance } from "./Provenance";
 
 const SYMBOLS = ["SPY", "QQQ", "NVDA", "TSLA", "AAPL", "AMD", "META", "ES", "NQ"];
 
 export function LiveQuotes() {
   const [quotes, setQuotes] = useState<Record<string, NormalizedQuote | null>>({});
+  const [source, setSource] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      const entries = await Promise.all(
+      const results = await Promise.all(
         SYMBOLS.map(async (s) => {
           try {
             const r = await loadQuote(s);
-            return [s, r.quotes[0] ?? null] as const;
+            return { sym: s, quote: r.quotes[0] ?? null, source: r.source };
           } catch {
-            return [s, null] as const;
+            return { sym: s, quote: null, source: "" };
           }
         }),
       );
-      if (!cancelled) setQuotes(Object.fromEntries(entries));
+      if (cancelled) return;
+      setQuotes(Object.fromEntries(results.map((r) => [r.sym, r.quote])));
+      // The tape is only as trustworthy as its WEAKEST symbol: if any one of them fell back to
+      // fixtures the strip is part canned, and saying "live" would be a half-truth.
+      const sources = results.filter((r) => r.quote != null).map((r) => r.source);
+      setSource(sources.length && sources.every((x) => x === "live") ? "live" : (sources.find((x) => x !== "live") ?? ""));
     };
     load();
     const ms = Math.max(20_000, Number(process.env.NEXT_PUBLIC_REFRESH_MS ?? 60_000) || 60_000);
@@ -42,6 +49,7 @@ export function LiveQuotes() {
         <span className="live-dot" />
         <span className="lbl text-amber-400">Watchlist · auto-refresh</span>
       </div>
+      <Provenance source={source} feed="quotes" className="mb-2" />
       {empty ? (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {SYMBOLS.map((s) => (

@@ -257,9 +257,9 @@ def main(tf=30, max_k=3, seed=20260823):
             row += 1
         if ri % 2000 == 0:
             print(f"   {ri:>6,} / {len(rules):,} rules   {time.time()-t0:6.0f}s", flush=True)
-    np.save("/tmp/af_out.npy", out); np.save("/tmp/af_meta.npy", meta)
+    np.save("results/alpha/af_out.npy", out); np.save("results/alpha/af_meta.npy", meta)
     import pickle
-    with open("/tmp/af_rules.pkl", "wb") as f:
+    with open("results/alpha/af_rules.pkl", "wb") as f:
         pickle.dump((names, rules, EXITS), f)
     print(f"done in {time.time()-t0:.0f}s")
 

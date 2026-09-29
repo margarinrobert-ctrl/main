@@ -1,0 +1,31 @@
+features 45; pairs with |rho| >= 0.9: 20
+  atr.range_atr                atr.tr_ratio                 +1.000
+  vp.prior_vah_atr             tpo.prior_vah_atr            +0.985
+  vp.prior_val_atr             tpo.prior_val_atr            +0.982
+  atr.ratio250                 atr.vol_pct250               +0.981
+  ema.d200_atr                 ema.slope200_atr             +0.965
+  vp.prior_poc_atr             vp.prior_vah_atr             +0.946
+  tpo.prior_poc_atr            tpo.prior_val_atr            +0.945
+  tpo.prior_poc_atr            tpo.prior_vah_atr            +0.942
+  vp.prior_poc_atr             tpo.prior_poc_atr            +0.933
+  vp.prior_lo_atr              vp.prior_val_atr             +0.930
+  vp.prior_poc_atr             tpo.prior_vah_atr            +0.929
+  vp.prior_lo_atr              tpo.prior_val_atr            +0.928
+  vp.prior_hi_atr              tpo.prior_vah_atr            +0.924
+  vp.prior_val_atr             tpo.prior_poc_atr            +0.923
+  vp.prior_vah_atr             tpo.prior_poc_atr            +0.922
+  vp.prior_hi_atr              vp.prior_vah_atr             +0.917
+  vp.dev_poc_atr               vp.dev_vah_atr               +0.907
+  vp.prior_poc_atr             vp.prior_val_atr             +0.906
+  vp.hvn_below_atr             vp.prior_poc_atr             +0.905
+  vp.dev_val_atr               tpo.ib_lo_atr                +0.900
+
+the survivor's strongest correlations:
+vp.prior_hi_atr      -0.494
+tpo.prior_vah_atr    -0.491
+vp.prior_vah_atr     -0.477
+vp.lvn_above_atr     +0.440
+vp.pos_in_prior_va   -0.418
+vp.prior_poc_atr     -0.401
+tpo.prior_poc_atr    -0.395
+vp.hvn_below_atr     -0.367

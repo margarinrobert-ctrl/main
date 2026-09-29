@@ -1,0 +1,17 @@
+C. THE ONE LOCKED READ (as-asked base) -- logistic win/lose, chosen on research IC +0.1407 before this read
+  locked base: n 430  R -0.3525  PF 0.195  win 27.9%  p90 +0.286
+  locked logistic: IC +0.1482  AUC 0.660
+  keep 50%: n 215  R -0.3241  PF 0.286  win 37.2%  p90 +0.405   random-filter median -0.3531  p 0.156
+  keep 30%: n 129  R -0.2967  PF 0.315  win 40.3%  p90 +0.470   random-filter median -0.3534  p 0.098
+
+D. WHAT RIDGE READS on research (|coef|, standardised features)
+  x.close_vs_ef_atr          -0.1273
+  v.dist_atr                 +0.1177
+  mom.rsi14                  -0.1141
+  vol.atr_ratio5_50          +0.1002
+  loc.dist_hi20_atr          -0.0976
+  v.low_touch_dist           -0.0958
+  vlm.trend10                -0.0597
+  mom.ret3_atr               +0.0581
+  clk.hour_sin               +0.0576
+  x.ef_slope_atr             +0.0566

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { loadQuote } from "@/lib/client-data";
 import { withBase } from "@/lib/paths";
+import { Provenance } from "./Provenance";
 
 const SYMBOLS = ["SPY", "QQQ", "NVDA", "TSLA", "AAPL", "AMD", "META", "ES", "NQ"];
 
@@ -10,6 +11,7 @@ interface Q {
   sym: string;
   last: number | null;
   chg: number | null;
+  source: string;
 }
 
 const EDGE_FADE = "linear-gradient(90deg, transparent, #000 5%, #000 95%, transparent)";
@@ -17,6 +19,7 @@ const EDGE_FADE = "linear-gradient(90deg, transparent, #000 5%, #000 95%, transp
 /** Scrolling tape of live watchlist quotes (last + % change). */
 export function TickerTape() {
   const [qs, setQs] = useState<Q[]>([]);
+  const [source, setSource] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -26,13 +29,18 @@ export function TickerTape() {
           try {
             const r = await loadQuote(s);
             const q = r.quotes[0];
-            return { sym: s, last: q?.last ?? null, chg: q?.percentChange ?? null };
+            return { sym: s, last: q?.last ?? null, chg: q?.percentChange ?? null, source: r.source };
           } catch {
-            return { sym: s, last: null, chg: null };
+            return { sym: s, last: null, chg: null, source: "" };
           }
         }),
       );
-      if (!cancelled) setQs(out);
+      if (cancelled) return;
+      setQs(out);
+      // A tape is only as trustworthy as its weakest symbol; one canned quote makes the strip
+      // part canned, and showing "live" over it would be a half-truth.
+      const sources = out.filter((q) => q.last != null).map((q) => q.source);
+      setSource(sources.length && sources.every((x) => x === "live") ? "live" : (sources.find((x) => x !== "live") ?? ""));
     };
     load();
     const ms = Math.max(20_000, Number(process.env.NEXT_PUBLIC_REFRESH_MS ?? 60_000) || 60_000);
@@ -72,6 +80,8 @@ export function TickerTape() {
   );
 
   return (
+    <div className="space-y-1.5">
+      <Provenance source={source} feed="quotes" />
     <div className="h-9 overflow-hidden rounded-lg border border-amber-400/20 bg-base font-mono text-xs">
       <div className="h-full" style={{ maskImage: EDGE_FADE, WebkitMaskImage: EDGE_FADE }}>
         <div className="flex h-full w-max animate-marquee items-center whitespace-nowrap">
@@ -81,6 +91,7 @@ export function TickerTape() {
           </div>
         </div>
       </div>
+    </div>
     </div>
   );
 }

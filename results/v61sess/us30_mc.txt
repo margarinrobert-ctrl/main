@@ -1,0 +1,48 @@
+MONTE CARLO on the US30 read, and the NQ + US30 portfolio.
+
+The US30 base is already known to be null against all three nulls, so the Monte Carlo here is not
+asked to certify anything -- it is asked how wide the uncertainty is, which is the honest use of it
+on a result that did not clear its controls.
+
+
+==============================================================================================================================
+MONTE CARLO on US30 -- bootstrap for the edge, permutation for the path
+==============================================================================================================================
+  leg                          block       n  mean pts       p5      p95   P(mean<=0)  real DD   MC p99  p99/real
+  US30 60m gate ON             block A   208    +11.26   -15.33   +39.04        0.244     3047     5143     1.69x
+  US30 60m gate ON             block B   142    +11.19   -30.49   +57.02        0.355     2947     5576     1.89x
+  US30 60m gate OFF            block A   568    +22.07    +1.74   +41.65        0.037     5450     7968     1.46x
+  US30 60m gate OFF            block B   353    +13.86   -13.66   +42.03        0.218     3733     8573     2.30x
+  US30 60m 07-11 + flatten     block A    88     -1.87   -20.30   +17.34        0.568      781     1799     2.30x
+  US30 60m 07-11 + flatten     block B    73     -5.51   -29.08   +19.06        0.651     1861     2088     1.12x
+
+==============================================================================================================================
+PORTFOLIO -- is US30 a genuinely different leg, or the same trade on a second index?
+==============================================================================================================================
+  overlapping days (NQ's span, 2022-12-26 on): 923
+
+  daily-$ correlation on the OVERLAP -- the only span where all legs exist:
+                     NQ 30m all hours  NQ 15m all hours  US30 gate ON  US30 gate OFF
+   NQ 30m all hours             1.000             0.358         0.226          0.303
+   NQ 15m all hours             0.358             1.000         0.105          0.060
+   US30 gate ON                 0.226             0.105         1.000          0.489
+   US30 gate OFF                0.303             0.060         0.489          1.000
+
+==============================================================================================================================
+COMBINATIONS on the overlapping span, against the best single leg
+==============================================================================================================================
+  combination                                       $   maxDD $  ret/DD  Sharpe     PF
+  NQ 30m all hours                              12899      2393    5.39    1.32  1.790
+  NQ 15m all hours                              11674       789   14.79    1.69  1.810
+  US30 gate ON                                   2081      2053    1.01    0.30  1.173
+  US30 gate OFF                                  3750      3733    1.00    0.36  1.132
+  EQUAL NQ 30m + NQ 15m                         12286       921   13.34    1.78  1.857
+  EQUAL NQ 30m + NQ 15m + US30 gate ON           8885       949    9.37    1.60  1.700
+  EQUAL NQ 30m + NQ 15m + US30 gate OFF          9441      1587    5.95    1.47  1.550
+
+  best single leg: NQ 15m all hours at ret/DD 14.79
+    EQUAL NQ 30m + NQ 15m                        ret/DD  13.34  worse
+    EQUAL NQ 30m + NQ 15m + US30 gate ON         ret/DD   9.37  worse
+    EQUAL NQ 30m + NQ 15m + US30 gate OFF        ret/DD   5.95  worse
+
+  runtime 2s

@@ -1,0 +1,231 @@
+//@version=5
+// Donchian breakout + optional EMA / ADX / CHOP filters + optional KAMA pullback entry,
+// inside a session you set: START, LAST ENTRY, and FLATTEN.
+//
+// This is the configuration the research actually tested, in one script. The earlier
+// KAMA file had the crossover standing on its own, which is not where the pullback tap was
+// measured -- the tap was always armed BY a Donchian breakout. That is fixed here.
+//
+// ============================== WHAT THE DEFAULTS MEASURE ==============================
+// NQ, 2022-12 to 2025-12, MNQ fees and bar-speed slippage (1.72 pts round turn), 65/35
+// session split, locked block read once. Defaults below: Donchian 20, EMA 50, ADX>20,
+// CHOP<40, 3xATR trail, signals 06:00-11:00 New York, flat at 12:00.
+//
+//   timeframe  block      n   pts/trade      R     win     PF   maxDD(pts)
+//    5m        research  453     +0.69   +0.0221  35.1%   1.04    1,194
+//    5m        LOCKED    226     -7.75   -0.0358  35.4%   0.71    1,955
+//   15m        research  224     +1.87   +0.0494  38.4%   1.07    1,037
+//   15m        LOCKED    107     -2.71   +0.0483  37.4%   0.93    1,446
+//   30m        research  133     +5.18   +0.0468  49.6%   1.18      932
+//   30m        LOCKED     74     +1.66   +0.0024  41.9%   1.04      764
+//
+// THAT IS NOT A PROFITABLE SYSTEM AND THE SCRIPT SHOULD NOT PRETEND OTHERWISE. Out of
+// sample 5m is PF 0.71, 15m is PF 0.93, and 30m is PF 1.04 on 74 trades. The session box is
+// what does it: unconstrained, the same rules on 30m return +26.71 points a trade out of
+// sample at PF 1.49. Holding is where this family is paid -- median winner 2.1 hours against
+// a median loser's 0.8, and trades carried overnight supply 338% of net P&L -- so a 12:00
+// flatten removes the tail and leaves the losers. The times are exposed because they were
+// asked for; the numbers above are what they cost.
+//
+// THE FILTERS ARE EACH TOGGLEABLE because they are not equally worth having. Against random
+// filters of identical selectivity on 1H: EMA p 0.047 (while keeping 96% of signals), ADX
+// p 0.553, CHOP p 0.863 -- and the full stack scores BELOW the raw unfiltered breakout. On
+// 15m it is ADX + CHOP that carries and DROPPING the EMA improves it.
+//
+// THE ENTRY TAP IS OFF BY DEFAULT, and here is the measurement, taken inside this very
+// session box on 15m:
+//
+//                      research                    LOCKED
+//   take the trade     n 308  R +0.0555            n 149  R +0.1004    <- best of the three
+//   KAMA 9 pullback    n 121  R +0.1737            n  49  R +0.0826
+//   blind limit, same  n 126  R +0.0912            n  52  R +0.1648
+//     distance (1.98 / 2.12 xATR)      p 0.215                p 0.599
+//
+//   Two things there. The tap never beats a BLIND LIMIT resting the same number of ATRs from
+//   the signal close -- out of sample the blind limit is the better of the two. So the
+//   moving average is not choosing the location; the DISTANCE is, and KAMA is an expensive
+//   way to say a number. And in total R -- what you actually collect -- simply taking every
+//   trade wins: +15.0 R against the tap's +4.0 out of sample, because waiting for an adverse
+//   excursion discards precisely the trades that ran.
+//
+// ONLY NQ was available. Nothing here is cross-market evidence.
+// ======================================================================================
+
+strategy("Donchian + filters + KAMA tap, session-bound", overlay=true, initial_capital=100000,
+  default_qty_type=strategy.fixed, default_qty_value=1, pyramiding=0,
+  commission_type=strategy.commission.cash_per_order, commission_value=0.72,
+  slippage=2, calc_on_every_tick=false, process_orders_on_close=false)
+
+// ---- session ---------------------------------------------------------------------------
+gS      = "Session (New York time)"
+useSess = input.bool(true,  "Restrict to a session",        group=gS)
+startH  = input.int(6,  "Start hour",       minval=0, maxval=23, group=gS, inline="a")
+startM  = input.int(0,  "Start minute",     minval=0, maxval=59, group=gS, inline="a")
+stopH   = input.int(11, "Last entry hour",  minval=0, maxval=23, group=gS, inline="b")
+stopM   = input.int(0,  "Last entry minute",minval=0, maxval=59, group=gS, inline="b")
+flatH   = input.int(12, "Flatten hour",     minval=0, maxval=23, group=gS, inline="c")
+flatM   = input.int(0,  "Flatten minute",   minval=0, maxval=59, group=gS, inline="c")
+
+// ---- trigger ---------------------------------------------------------------------------
+gT      = "Donchian trigger"
+dcLen   = input.int(20,   "Donchian period",     minval=2,   group=gT)
+useLong = input.bool(true,  "Longs",  group=gT, inline="side")
+useShrt = input.bool(true,  "Shorts", group=gT, inline="side")
+
+gF      = "Filters (each measured separately -- see header)"
+useEma  = input.bool(true, "Price beyond EMA",  group=gF, inline="e")
+emaLen  = input.int(50,  "length",              minval=2, group=gF, inline="e")
+useAdx  = input.bool(true, "ADX above",         group=gF, inline="x")
+adxLen  = input.int(14,  "len",                 minval=2, group=gF, inline="x")
+adxMin  = input.float(20,"",                    minval=0, group=gF, inline="x", step=1)
+useChop = input.bool(true, "Choppiness below",  group=gF, inline="p")
+chLen   = input.int(14,  "len",                 minval=2, group=gF, inline="p")
+chMax   = input.float(40,"",                    minval=0, group=gF, inline="p", step=1)
+
+// ---- exits -----------------------------------------------------------------------------
+gX      = "Exits"
+atrLen  = input.int(14,   "ATR length",              minval=1,   group=gX)
+atrMul  = input.float(3.0,"ATR trailing stop x",     minval=0.1, group=gX, step=0.1)
+tpMode  = input.string("off", "Take profit", options=["off","points","R multiple"], group=gX)
+tpPts   = input.float(50, "Take profit in points",   minval=0.25,group=gX, step=0.25)
+tpR     = input.float(1.0,"Take profit in R",        minval=0.1, group=gX, step=0.1)
+
+// ---- entry tap -------------------------------------------------------------------------
+gE      = "Entry tap (measured WORSE than taking the trade -- see header)"
+tapMode = input.string("off", "Wait for a pullback to",
+  options=["off","KAMA","EMA","ATR distance"], group=gE)
+kLen    = input.int(9,    "KAMA length",             minval=2,   group=gE)
+kFast   = input.int(2,    "KAMA fast constant",      minval=1,   group=gE)
+kSlow   = input.int(30,   "KAMA slow constant",      minval=2,   group=gE)
+tapEma  = input.int(9,    "Tap EMA length",          minval=2,   group=gE)
+tapDist = input.float(2.0,"ATR distance",            minval=0.1, group=gE, step=0.1)
+tapWin  = input.int(5,    "Give up after N bars",    minval=1,   group=gE)
+
+// ---- clock. NEW YORK explicitly: bare hour/minute are EXCHANGE time (Chicago for CME) ----
+mod    = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+canSig = not useSess or (mod >= startH * 60 + startM and mod < stopH * 60 + stopM)
+mustGo = useSess and mod >= flatH * 60 + flatM
+
+// ---- indicators -------------------------------------------------------------------------
+// The Donchian band EXCLUDES the current bar: ta.highest(high, n) includes bar n's own high,
+// so close could never exceed it and the signal would never fire.
+upper = ta.highest(high, dcLen)[1]
+lower = ta.lowest(low,  dcLen)[1]
+emaV  = ta.ema(close, emaLen)
+// ta.dmi returns [+DI, -DI, ADX] IN THAT ORDER -- the first element is +DI, not ADX.
+[_pdi, _mdi, adxV] = ta.dmi(adxLen, adxLen)
+trSum = math.sum(ta.tr(true), chLen)
+chRng = ta.highest(high, chLen) - ta.lowest(low, chLen)
+chopV = chRng > 0 ? 100.0 * math.log10(trSum / chRng) / math.log10(chLen) : na
+atrV  = ta.atr(atrLen)   // Wilder's -- what an "ATR multiplier" means
+
+// KAMA, written out because Pine has no built-in. Seeded to match the research code.
+fsc = 2.0 / (kFast + 1.0)
+ssc = 2.0 / (kSlow + 1.0)
+chg = math.abs(close - close[kLen])
+kvl = math.sum(math.abs(close - close[1]), kLen)
+er  = kvl > 0 ? chg / kvl : 0.0
+sc  = math.pow(er * (fsc - ssc) + ssc, 2)
+var float kama = na
+kama := na(kama) ? (bar_index >= kLen ? close : na) : kama + sc * (close - kama)
+
+ready = not na(upper) and not na(lower) and not na(atrV) and atrV > 0
+okEma = not useEma  or not na(emaV)
+okAdx = not useAdx  or not na(adxV)
+okChp = not useChop or not na(chopV)
+
+// "Crosses above" is a CROSS, not a level -- otherwise one breakout becomes a run of signals.
+xUp = close > upper and close[1] <= upper[1]
+xDn = close < lower and close[1] >= lower[1]
+
+passL = (not useEma or close > emaV) and (not useAdx or adxV > adxMin) and (not useChop or chopV < chMax)
+passS = (not useEma or close < emaV) and (not useAdx or adxV > adxMin) and (not useChop or chopV < chMax)
+
+// Conditions are read on the SIGNAL bar; the fill is later. barstate.isconfirmed so tick
+// evaluation cannot change the result.
+base    = ready and okEma and okAdx and okChp and canSig and barstate.isconfirmed
+goLong  = base and useLong and xUp and passL
+goShort = base and useShrt and xDn and passS
+
+// ---- the tap: arm on the signal, rest a limit, abandon after N bars ---------------------
+tapLine = tapMode == "KAMA" ? kama : tapMode == "EMA" ? ta.ema(close, tapEma) : na
+useTap  = tapMode != "off"
+
+var int   armSide = 0
+var float armLv   = na
+var float armATR  = na
+var int   armBar  = na
+
+if useTap and strategy.position_size == 0 and (goLong or goShort)
+    lvl = tapMode == "ATR distance" ? close - (goLong ? 1 : -1) * tapDist * atrV : tapLine
+    if not na(lvl)
+        armSide := goLong ? 1 : -1
+        armATR  := atrV
+        armBar  := bar_index
+        armLv   := lvl
+
+if armSide != 0 and (bar_index - armBar > tapWin or mustGo or strategy.position_size != 0)
+    armSide := 0
+    armLv   := na
+
+// ---- entries -----------------------------------------------------------------------------
+var float entATR = na
+
+if not useTap and strategy.position_size == 0 and goLong
+    entATR := atrV
+    strategy.entry("L", strategy.long)
+
+if not useTap and strategy.position_size == 0 and goShort
+    entATR := atrV
+    strategy.entry("S", strategy.short)
+
+if useTap and strategy.position_size == 0 and armSide > 0 and not na(armLv)
+    entATR := armATR
+    strategy.entry("L", strategy.long, limit=armLv)
+
+if useTap and strategy.position_size == 0 and armSide < 0 and not na(armLv)
+    entATR := armATR
+    strategy.entry("S", strategy.short, limit=armLv)
+
+// ---- the trail: ratchets from entry, never loosens ---------------------------------------
+var float trail = na
+
+if strategy.position_size == 0
+    trail := na
+
+if strategy.position_size > 0 and not na(entATR)
+    seed = strategy.position_avg_price - atrMul * entATR
+    cand = high - atrMul * entATR
+    trail := na(trail) ? seed : math.max(trail, cand)
+
+if strategy.position_size < 0 and not na(entATR)
+    seed = strategy.position_avg_price + atrMul * entATR
+    cand = low + atrMul * entATR
+    trail := na(trail) ? seed : math.min(trail, cand)
+
+// Take profit, if asked for. Measured: on the intraday family the target is essentially never
+// reached -- 0 of 1,027 out-of-sample trades hit 5R -- so this is off by default.
+tpOff = tpMode == "points" ? tpPts : tpMode == "R multiple" ? tpR * atrMul * nz(entATR) : na
+tpLvl = na(tpOff) or strategy.position_size == 0 ? na :
+  strategy.position_size > 0 ? strategy.position_avg_price + tpOff : strategy.position_avg_price - tpOff
+
+if strategy.position_size > 0 and not na(trail)
+    strategy.exit("L x", from_entry="L", stop=trail, limit=tpLvl)
+
+if strategy.position_size < 0 and not na(trail)
+    strategy.exit("S x", from_entry="S", stop=trail, limit=tpLvl)
+
+if mustGo and strategy.position_size != 0
+    strategy.close_all(comment="flat")
+
+// ---- plots -------------------------------------------------------------------------------
+plot(upper, "Donchian upper", color=color.new(color.teal, 0))
+plot(lower, "Donchian lower", color=color.new(color.teal, 0))
+plot(useEma ? emaV : na, "EMA", color=color.new(color.orange, 0))
+plot(useTap and tapMode == "KAMA" ? kama : na, "KAMA", color=color.new(color.aqua, 0), linewidth=2)
+plot(armSide != 0 ? armLv : na, "Tap limit", color=color.new(color.yellow, 0),
+  style=plot.style_linebr)
+plot(strategy.position_size != 0 ? trail : na, "ATR trail", color=color.new(color.red, 0),
+  style=plot.style_linebr)
+plot(tpLvl, "Take profit", color=color.new(color.lime, 0), style=plot.style_linebr)
+bgcolor(useSess and canSig ? color.new(color.teal, 94) : na)

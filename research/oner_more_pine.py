@@ -88,7 +88,7 @@ def emit(names, side, am, flat, tf, st, title, stem, outdir):
     return bad
 
 
-def mega2(path="/tmp/phase5_mega2.npy", outdir=Path("pine/mega2_1R")):
+def mega2(path="results/oner/phase5_mega2.npy", outdir=Path("pine/mega2_1R")):
     """The four the 139,740,876-combination sweep returned."""
     from test_suite import build, use_pool, _daily, _sharpe
     _register()

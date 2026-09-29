@@ -13,7 +13,7 @@ sys.path.insert(0, "research")
 from bos_choch import prep
 from alpha_factory2 import build_conditions, price_one, EXITS, PV, TICK, COMM, EC, SE
 
-Z = np.load("/tmp/af2.npz", allow_pickle=True)
+Z = np.load("results/alpha/af2.npz", allow_pickle=True)
 res_net, res_n = Z["res_net"], Z["res_n"]
 lok_net, lok_n = Z["lok_net"], Z["lok_n"]
 combos, names = Z["combos"], list(Z["names"])
@@ -101,7 +101,7 @@ print(f"      short side still positive: {int((lok_net[gs]>0).sum()):,}  "
 print(f"      BOTH still positive      : {int(((lok_net[gl]>0)&(lok_net[gs]>0)).sum()):,}  "
       f"({100*((lok_net[gl]>0)&(lok_net[gs]>0)).mean():.1f}%)   "
       f"chance if independent would be ~{100*(lok_net[gl]>0).mean()*(lok_net[gs]>0).mean():.1f}%")
-np.save("/tmp/af2_neutral.npy", np.where(good)[0])
+np.save("results/alpha/af2_neutral.npy", np.where(good)[0])
 
 
 # ============================================================================================
@@ -128,7 +128,7 @@ def pass2():
     us = np.unique(d["sess"]); sidx = np.searchsorted(us, d["sess"]).astype(np.int64)
     nsess = len(us); cut = int(0.65 * nsess)
 
-    neutral = np.load("/tmp/af2_neutral.npy")
+    neutral = np.load("results/alpha/af2_neutral.npy")
     pl = neutral // len(EXITS)           # rule index
     pg = neutral % len(EXITS)            # geometry index
     Lj = pl * NVAR + pg
@@ -217,7 +217,7 @@ def pass2():
         neg += v < 0
         print(f"      fold {f}: ${v:>9,.0f}")
     print(f"   negative folds: {neg} of 7")
-    np.save("/tmp/af2_book.npy", P)
+    np.save("results/alpha/af2_book.npy", P)
 
 
 if __name__ == "__main__":

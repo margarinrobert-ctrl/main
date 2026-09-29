@@ -1,0 +1,138 @@
+
+============================================================================================================================
+V37 -- IFVG WITH THREE-TIMEFRAME ORDER-FLOW ALIGNMENT (the source's own model)
+============================================================================================================================
+   order flow = polarity of the most recent inversion on that timeframe; alignment across M15 and M5;
+   entry timeframe M1; intraday only, entries 09:30-15:30 New York, hard flatten 16:00; real MNQ costs x1.44;
+   ONE live order; the 1-minute path; stop and target resolved in sequence, stop first inside a minute.
+   1,048,575 1-minute bars, 767 trading days, split 60/20/20 -> train 630,097 / valid 209,481 / oos 208,997 bars
+
+   signal census (after the intraday window, before the one-order lock):
+      align True  confirm True    15,058 signals   long 0.455
+      align True  confirm False   14,306 signals   long 0.458
+      align False confirm True    50,735 signals   long 0.477
+      align False confirm False   50,640 signals   long 0.477
+
+============================================================================================================================
+TRAIN BLOCK -- all 32 declared cells (8 geometries x 4 model variants)
+============================================================================================================================
+   align confirm entry   stopK  tpR   fill     n   $/trade     PF    win  Sharpe     net $      R/t
+   True  True    close     1.0  1.5  0.672  6229     -4.17  0.735  0.409   -7.60    -25950  -0.2460
+   True  True    close     1.0  2.0  0.616  5704     -4.50  0.744  0.338   -6.94    -25690  -0.2580
+   True  True    close     1.5  1.5  0.519  4839     -4.26  0.809  0.408   -4.87    -20615  -0.1601
+   True  True    close     1.5  2.0  0.449  4178     -4.30  0.828  0.341   -3.72    -17953  -0.1608
+   True  True    edge      1.0  1.5  0.465  4286     -4.42  0.719  0.406   -6.86    -18948  -0.2536
+   True  True    edge      1.0  2.0  0.436  4033     -4.96  0.721  0.331   -6.64    -19992  -0.2819
+   True  True    edge      1.5  1.5  0.386  3572     -4.95  0.781  0.396   -4.90    -17691  -0.1891
+   True  True    edge      1.5  2.0  0.344  3215     -5.11  0.797  0.330   -4.06    -16428  -0.1937
+   True  False   close     1.0  1.5  0.680  6019     -4.21  0.730  0.408   -7.53    -25330  -0.2517
+   True  False   close     1.0  2.0  0.617  5445     -4.08  0.764  0.343   -6.16    -22217  -0.2489
+   True  False   close     1.5  1.5  0.520  4620     -4.29  0.806  0.406   -4.79    -19822  -0.1675
+   True  False   close     1.5  2.0  0.459  4072     -3.68  0.849  0.344   -3.13    -14988  -0.1534
+   True  False   edge      1.0  1.5  0.516  4527     -4.28  0.725  0.408   -6.95    -19356  -0.2510
+   True  False   edge      1.0  2.0  0.483  4250     -4.61  0.736  0.336   -6.67    -19607  -0.2692
+   True  False   edge      1.5  1.5  0.421  3705     -4.87  0.782  0.398   -4.82    -18046  -0.1851
+   True  False   edge      1.5  2.0  0.377  3351     -4.68  0.812  0.334   -3.63    -15688  -0.1830
+   False True    close     1.0  1.5  0.613 18762     -4.58  0.709  0.401  -15.12    -85953  -0.2694
+   False True    close     1.0  2.0  0.534 16319     -4.80  0.727  0.332  -12.99    -78265  -0.2797
+   False True    close     1.5  1.5  0.383 11786     -5.38  0.763  0.394   -8.94    -63381  -0.1972
+   False True    close     1.5  2.0  0.314  9721     -5.89  0.769  0.327   -7.95    -57289  -0.2003
+   False True    edge      1.0  1.5  0.334 10026     -4.46  0.711  0.403  -10.91    -44686  -0.2681
+   False True    edge      1.0  2.0  0.303  9100     -5.20  0.703  0.325  -10.51    -47287  -0.3040
+   False True    edge      1.5  1.5  0.242  7327     -5.39  0.758  0.386   -7.74    -39520  -0.2206
+   False True    edge      1.5  2.0  0.209  6401     -5.46  0.781  0.323   -6.49    -34952  -0.2184
+   False False   close     1.0  1.5  0.613 18797     -4.62  0.707  0.401  -16.20    -86754  -0.2706
+   False False   close     1.0  2.0  0.528 16158     -4.47  0.743  0.338  -12.70    -72182  -0.2642
+   False False   close     1.5  1.5  0.384 11801     -4.76  0.787  0.399   -8.58    -56144  -0.1834
+   False False   close     1.5  2.0  0.310  9569     -5.16  0.794  0.331   -7.67    -49413  -0.1899
+   False False   edge      1.0  1.5  0.387 11710     -4.43  0.712  0.406  -12.51    -51861  -0.2602
+   False False   edge      1.0  2.0  0.351 10617     -5.19  0.704  0.327  -12.37    -55061  -0.2974
+   False False   edge      1.5  1.5  0.277  8410     -5.99  0.736  0.386   -9.93    -50402  -0.2178
+   False False   edge      1.5  2.0  0.238  7300     -5.74  0.771  0.325   -7.27    -41866  -0.2110
+
+============================================================================================================================
+READ THE GRID BY ITS MARGINALS, NOT ITS TOP CELL
+============================================================================================================================
+   share of the 32 cells profitable in dollars: 0.0%   with PF > 1.10: 0.0%
+   mean $/trade over all cells -4.78   best -3.68   worst -5.99
+
+   marginal by algn:
+      False    cells  16  mean $/trade    -5.09  mean PF  0.742  mean Sharpe -10.49  profitable  0.0%
+      True     cells  16  mean $/trade    -4.46  mean PF  0.771  mean Sharpe  -5.58  profitable  0.0%
+
+   marginal by cfrm:
+      False    cells  16  mean $/trade    -4.69  mean PF  0.760  mean Sharpe  -8.18  profitable  0.0%
+      True     cells  16  mean $/trade    -4.86  mean PF  0.753  mean Sharpe  -7.89  profitable  0.0%
+
+   marginal by entry:
+      close    cells  16  mean $/trade    -4.57  mean PF  0.766  mean Sharpe  -8.43  profitable  0.0%
+      edge     cells  16  mean $/trade    -4.98  mean PF  0.747  mean Sharpe  -7.64  profitable  0.0%
+
+   marginal by stop_k:
+      1.0      cells  16  mean $/trade    -4.56  mean PF  0.724  mean Sharpe  -9.92  profitable  0.0%
+      1.5      cells  16  mean $/trade    -4.99  mean PF  0.789  mean Sharpe  -6.16  profitable  0.0%
+
+   marginal by tp_r:
+      1.5      cells  16  mean $/trade    -4.69  mean PF  0.748  mean Sharpe  -8.64  profitable  0.0%
+      2.0      cells  16  mean $/trade    -4.86  mean PF  0.765  mean Sharpe  -7.43  profitable  0.0%
+
+============================================================================================================================
+THE SOURCE'S TWO CLAIMS, TESTED AS ABLATIONS ON TRAIN
+============================================================================================================================
+   alignment across M15/M5 is required                  ON    -4.46   OFF    -5.09   delta    +0.63 $/trade
+   enter on the confirming candle, not the inversion    ON    -4.86   OFF    -4.69   delta    -0.17 $/trade
+
+============================================================================================================================
+IS IT A COST PROBLEM? -- the same 32 cells at ZERO cost
+============================================================================================================================
+   `CLAUDE.md`: always run the zero-cost variant before blaming execution. A setup that is negative
+   GROSS is not an execution problem, and no fill improvement can rescue it.
+   share of the 32 cells profitable GROSS: 56.2%   mean $/trade -0.00   best +1.11   worst -1.23
+   mean PF gross 1.003  against 0.757 net -- the round turn is worth +4.78 $/trade here
+      gross marginal by algn     False: -0.32   True: +0.31
+      gross marginal by cfrm     False: +0.08   True: -0.09
+      gross marginal by entry    close: +0.20   edge: -0.21
+      gross marginal by stop_k   1.0: +0.21   1.5: -0.22
+      gross marginal by tp_r     1.5: +0.06   2.0: -0.06
+
+============================================================================================================================
+SELECTION -- one cell, chosen on TRAIN alone
+============================================================================================================================
+   align=True  confirm=False  entry=close  stop_k=1.5  tp_r=2.0
+   train: n 4072  $/trade -3.68  PF 0.849  Sharpe -3.13  net $-14,988
+
+============================================================================================================================
+MATCHED CONTROL -- the research GATE, run on TRAIN (200 draws)
+============================================================================================================================
+   control $/trade: mean -4.88  median -4.92  p95 -3.51
+   rule -3.68   -> p = 0.080   FAILS the gate
+
+============================================================================================================================
+MONTE CARLO -- 1,000 draws on the TRAIN block
+============================================================================================================================
+   day-block bootstrap (edge):  P(mean $/trade <= 0) = 1.000   5th -5.09  median -3.68  95th -2.22
+   net $ 5th -20,722  95th -9,014
+   permutation (path only):     realised DD $17,205   median $15,536  p95 $16,626  p99 $17,125
+
+============================================================================================================================
+VALIDATION BLOCK
+============================================================================================================================
+      valid                      n  1267  $/trade    -2.97  PF  0.919  win 0.339  Sharpe  -1.68  DD $    4555  net $    -3767
+
+============================================================================================================================
+OUT OF SAMPLE -- read ONCE, after everything above was fixed
+============================================================================================================================
+      oos                        n  1229  $/trade    -2.27  PF  0.924  win 0.352  Sharpe  -1.51  DD $    3793  net $    -2784
+      1,000-draw bootstrap on the holdout: P(mean <= 0) = 0.874   5th -5.16  median -2.22  95th +0.91
+      holdout matched control: mean -4.76   rule -2.27   p = 0.085
+
+============================================================================================================================
+ALL FOUR MODEL VARIANTS ON THE HOLDOUT -- so the selection is visible, not hidden
+============================================================================================================================
+   align confirm      n   $/trade     PF    win  Sharpe     net $
+   True  True      1282     -1.52  0.949  0.356   -0.99     -1953
+   True  False     1229     -2.27  0.924  0.352   -1.51     -2784
+   False True      3076     -2.68  0.910  0.344   -2.79     -8259
+   False False     3048     -3.22  0.893  0.342   -3.49     -9810
+
+   elapsed 17s

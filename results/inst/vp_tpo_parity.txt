@@ -1,0 +1,7 @@
+Pine TPO transliteration vs vp_tpo.build (NQ 15m, 70685 bars)
+  prior single print above     both finite  52849  exact 100.00%  max|diff| 0.0000  one-sided NaN 0 (0.00%)
+  prior POC                    both finite  70597  exact 100.00%  max|diff| 0.0000  one-sided NaN 0 (0.00%)
+  prior VAH                    both finite  70597  exact 100.00%  max|diff| 0.0000  one-sided NaN 0 (0.00%)
+  prior VAL                    both finite  70597  exact 100.00%  max|diff| 0.0000  one-sided NaN 0 (0.00%)
+  developing IB high           both finite  19557  exact 100.00%  max|diff| 0.0000  one-sided NaN 0 (0.00%)
+  gate 'single print within 3 ATR above': agree on 100.000% of bars; Pine 31151 vs research 31151 true bars

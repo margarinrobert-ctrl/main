@@ -1,0 +1,161 @@
+
+==============================================================================================================================
+A. THE REGIME ITSELF -- distribution, and what the HYSTERESIS is worth
+==============================================================================================================================
+  market         BULL     BEAR     CHOP   median ADX   no-hysteresis CHOP   bars reclassified
+  NQ            17.5%    15.1%    67.4%         24.1                68.2%                0.8%
+  US100         18.2%    15.1%    66.7%         24.2                67.5%                0.8%
+  US30          17.7%    14.6%    67.7%         23.8                68.6%                0.9%
+  US30_ISO      17.0%    15.4%    67.6%         23.9                68.4%                0.8%
+
+  With entry 25 and exit 25 the state machine collapses to `ADX >= 25`. That moves
+  only 0.8-0.9% of bars on every feed, so THE HYSTERESIS IS VERY NEARLY INERT here:
+  ADX(14) on 15-minute bars rarely sits in the 20-25 band for long enough to matter.
+  Panel D confirms it from the other side -- the adx_exit axis is flat to the cent.
+
+==============================================================================================================================
+B. WHAT THE FILTER REMOVES, AND WHAT THOSE TRADES WOULD HAVE DONE
+==============================================================================================================================
+  Every unfiltered ORB v1 trade, tagged by the regime frozen at its own signal bar,
+  and by whether the filter would KEEP it (long in BULL, short in BEAR).
+
+  market    bucket                          n   expectancy       net $      PF   win %
+  NQ        BULL regime                    37        -2.14         -79   0.977    45.9
+  NQ        BEAR regime                    24       -83.10      -1,994   0.377    25.0
+  NQ        CHOP regime                    73        -5.15        -376   0.949    43.8
+  NQ        KEPT by the filter             61       -33.99      -2,073   0.688    37.7
+  NQ        REMOVED by the filter          73        -5.15        -376   0.949    43.8
+
+  US100     BULL regime                    70        56.15       3,930   1.612    62.9
+  US100     BEAR regime                    45        -3.11        -140   0.970    55.6
+  US100     CHOP regime                   168       -15.33      -2,576   0.882    44.6
+  US100     KEPT by the filter            115        32.96       3,790   1.340    60.0
+  US100     REMOVED by the filter         168       -15.33      -2,576   0.882    44.6
+
+  US30      BULL regime                    61        22.53       1,374   1.230    55.7
+  US30      BEAR regime                    50        20.95       1,047   1.209    48.0
+  US30      CHOP regime                   153        -9.75      -1,491   0.915    47.1
+  US30      KEPT by the filter            111        21.81       2,421   1.221    52.3
+  US30      REMOVED by the filter         153        -9.75      -1,491   0.915    47.1
+
+  US30_ISO  BULL regime                    10         8.14          81   1.139    50.0
+  US30_ISO  BEAR regime                     9       -68.58        -617   0.291    11.1
+  US30_ISO  CHOP regime                    24       -64.79      -1,555   0.488    25.0
+  US30_ISO  KEPT by the filter             19       -28.20        -536   0.632    31.6
+  US30_ISO  REMOVED by the filter          24       -64.79      -1,555   0.488    25.0
+
+
+==============================================================================================================================
+C. UNFILTERED vs REGIME-FILTERED, every feed and every block
+==============================================================================================================================
+
+  NQ
+  metric                            developme/no fil  developme/regime  validatio/no fil  validatio/regime  out-of-sa/no fil  out-of-sa/regime
+  trades                                          68                34                18                 8                48                21
+  % of sessions traded                        17.801             8.901            15.652             6.957            17.910             7.836
+  expectancy $/trade                         -37.669           -77.816            12.036            59.935            -2.171            -1.690
+  net $                                     -2,561.5          -2,645.7             216.6             479.5            -104.2           -35.500
+  profit factor                                0.690             0.404             1.158             2.060             0.976             0.981
+  win rate %                                  38.235            29.412            44.444            50.000            43.750            42.857
+  average win $                                218.9             179.1             198.3             233.0             204.1             205.9
+  average loss $                              -196.5            -184.9            -137.0            -113.1            -162.6            -157.4
+  max drawdown $                            -3,129.7          -3,403.3            -635.7            -210.6          -1,455.8          -1,163.8
+  Sharpe (daily, ann.)                        -1.136            -1.851             0.412             1.296            -0.071            -0.036
+  longest losing streak                            7                 6                 5                 2                 5                 5
+  mean R                                      -0.190            -0.384             0.194             0.549            -0.017             0.006
+  % trades with an ambiguous bar               0.000             0.000             0.000             0.000             0.000             0.000
+  % long                                      51.471            58.824            66.667            62.500            62.500            57.143
+
+  US100
+  metric                             research/no fil   research/regime  validatio/no fil  validatio/regime       test/no fil       test/regime
+  trades                                         168                65                60                26                55                26
+  % of sessions traded                        12.815             4.958            11.650             5.049            12.195             5.765
+  expectancy $/trade                           0.278            38.349            31.565            24.939           -13.210             5.222
+  net $                                       46.783           2,492.7           1,893.9             648.4            -726.5             135.8
+  profit factor                                1.002             1.395             1.312             1.255             0.888             1.047
+  win rate %                                  50.000            61.538            55.000            57.692            49.091            53.846
+  average win $                                244.0             220.0             241.3             212.8             213.2             214.2
+  average loss $                              -243.4            -252.2            -224.8            -231.2            -231.5            -238.6
+  max drawdown $                            -2,685.9          -1,161.4          -1,242.0            -915.5          -1,730.3          -1,135.6
+  Sharpe (daily, ann.)                         0.006             0.542             0.675             0.372            -0.302             0.081
+  longest losing streak                            5                 3                 3                 3                 6                 4
+  mean R                                      -0.002             0.157             0.135             0.111            -0.033             0.083
+  % trades with an ambiguous bar               0.000             0.000             3.333             0.000             0.000             0.000
+  % long                                      67.262            66.154            60.000            53.846            56.364            53.846
+
+  US30
+  metric                             research/no fil   research/regime  validatio/no fil  validatio/regime       test/no fil       test/regime
+  trades                                         168                71                56                24                40                19
+  % of sessions traded                        12.584             5.318            10.874             4.660            10.101             4.798
+  expectancy $/trade                          30.046            51.845           -33.625            19.752           -55.869           -94.375
+  net $                                      5,047.7           3,681.0          -1,883.0             474.1          -2,234.8          -1,793.1
+  profit factor                                1.291             1.577             0.699             1.225             0.537             0.332
+  win rate %                                  55.952            60.563            41.071            50.000            32.500            26.316
+  average win $                                238.2             233.9             190.5             215.2             199.1             178.5
+  average loss $                              -234.4            -227.8            -189.9            -175.7            -178.6            -191.8
+  max drawdown $                            -2,002.0            -803.8          -2,185.8          -1,412.7          -2,917.8          -1,818.8
+  Sharpe (daily, ann.)                         0.663             0.755            -0.828             0.305            -1.370            -1.619
+  longest losing streak                            7                 4                11                 6                 6                 5
+  mean R                                       0.139             0.247            -0.138             0.179            -0.308            -0.458
+  % trades with an ambiguous bar               0.000             0.000             0.000             0.000             0.000             0.000
+  % long                                      58.333            57.746            46.429            54.167            45.000            42.105
+
+  US30_ISO
+  metric                            reserved /no fil  reserved /regime
+  trades                                          43                19
+  % of sessions traded                         8.238             3.640
+  expectancy $/trade                         -48.620           -34.792
+  net $                                     -2,090.7            -661.1
+  profit factor                                0.535             0.582
+  win rate %                                  27.907            31.579
+  average win $                                200.2             153.3
+  average loss $                              -144.9            -121.6
+  max drawdown $                            -1,892.6            -718.7
+  Sharpe (daily, ann.)                        -1.203            -0.659
+  longest losing streak                            7                 6
+  mean R                                      -0.339            -0.227
+  % trades with an ambiguous bar               0.000             0.000
+  % long                                      53.488            52.632
+
+==============================================================================================================================
+D. SENSITIVITY -- 81 threshold combinations, scored IN-SAMPLE ONLY
+==============================================================================================================================
+  324 cells (243 scorable in-sample on the three selectable feeds)
+  share profitable in-sample: 66.7%   median in-sample expectancy $33.21
+  in-sample to out-of-sample expectancy correlation: Pearson -0.633   Spearman -0.656
+
+  adx_entry   (marginal average over the in-sample blocks)
+       20.0   cells   81   median IS trades   104   mean IS exp    +13.23   share profitable  66.7%   per market NQ  -29.56 US100  +32.41 US30  +36.85
+       25.0   cells   81   median IS trades    79   mean IS exp    +10.89   share profitable  66.7%   per market NQ  -47.66 US100  +33.29 US30  +47.03
+       30.0   cells   81   median IS trades    61   mean IS exp     +7.75   share profitable  66.7%   per market NQ  -67.05 US100  +42.47 US30  +47.83
+
+  adx_exit   (marginal average over the in-sample blocks)
+       15.0   cells   81   median IS trades    70   mean IS exp    +10.68   share profitable  66.7%   per market NQ  -48.09 US100  +36.06 US30  +44.07
+       18.0   cells   81   median IS trades    70   mean IS exp    +10.59   share profitable  66.7%   per market NQ  -48.09 US100  +36.06 US30  +43.82
+       20.0   cells   81   median IS trades    70   mean IS exp    +10.59   share profitable  66.7%   per market NQ  -48.09 US100  +36.06 US30  +43.82
+
+  slope   (marginal average over the in-sample blocks)
+      0.025   cells   81   median IS trades    72   mean IS exp     +8.60   share profitable  66.7%   per market NQ  -50.91 US100  +33.91 US30  +42.80
+       0.05   cells   81   median IS trades    68   mean IS exp     +9.29   share profitable  66.7%   per market NQ  -48.81 US100  +37.25 US30  +39.42
+        0.1   cells   81   median IS trades    61   mean IS exp    +13.98   share profitable  66.7%   per market NQ  -44.55 US100  +37.01 US30  +49.48
+
+  dist   (marginal average over the in-sample blocks)
+       0.15   cells   81   median IS trades    70   mean IS exp     +9.95   share profitable  66.7%   per market NQ  -49.74 US100  +36.67 US30  +42.91
+       0.25   cells   81   median IS trades    70   mean IS exp     +9.79   share profitable  66.7%   per market NQ  -50.02 US100  +35.14 US30  +44.25
+        0.4   cells   81   median IS trades    68   mean IS exp    +12.13   share profitable  66.7%   per market NQ  -44.52 US100  +36.36 US30  +44.55
+
+==============================================================================================================================
+E. THE OUT-OF-SAMPLE READ -- base thresholds, and the marginal consensus
+==============================================================================================================================
+  multiplicity: 243 in-sample cells scored on three feeds; TWO threshold sets
+  are read out of sample. Marginal consensus: {'adx_entry': np.float64(20.0), 'adx_exit': np.float64(15.0), 'slope': np.float64(0.1), 'dist': np.float64(0.4)}
+
+  market    thresholds            block                              n   expectancy      net $      PF   Sharpe
+  NQ        base (as specified)   out-of-sample                     21        -1.69        -36   0.981   -0.036
+  NQ        marginal consensus    out-of-sample                     22        32.84        722   1.432    0.701
+  US100     base (as specified)   test                              26         5.22        136   1.047    0.081
+  US100     marginal consensus    test                              28         0.39         11   1.004    0.006
+  US30      base (as specified)   test                              19       -94.38     -1,793   0.332   -1.619
+  US30      marginal consensus    test                              18      -101.62     -1,829   0.358   -1.543
+  US30_ISO  base (as specified)   reserved (second provider)        19       -34.79       -661   0.582   -0.659
+  US30_ISO  marginal consensus    reserved (second provider)        21       -27.36       -575   0.713   -0.455
