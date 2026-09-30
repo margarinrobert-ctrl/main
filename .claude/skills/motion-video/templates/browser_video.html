@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Motion Render</title>
+<!--
+  Zero-install motion video: a canvas animation that exports itself as a real
+  H.264 .mp4 in the viewer's browser (WebCodecs + the tiny MP4 muxer below).
+  No ffmpeg, no server, no CDN - the file is self-contained and works offline.
+
+  Claude edits ONLY the block between "SCENE START" and "SCENE END".
+  draw(ctx, t) must be a pure function of t (seconds): no Date.now(), no
+  Math.random() without a seed, no state carried between calls. That is what
+  makes the export frame-exact and faster than real time.
+-->
+<style>
+  :root { --bg:#f6f6f4; --panel:#ffffff; --ink:#1c1c1c; --muted:#6b6b6b; --line:#dedcd6; --accent:#2f6fed; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg:#141414; --panel:#1d1d1d; --ink:#ececec; --muted:#9a9a9a; --line:#2e2e2e; --accent:#6d9bff; }
+  }
+  :root[data-theme="dark"] { --bg:#141414; --panel:#1d1d1d; --ink:#ececec; --muted:#9a9a9a; --line:#2e2e2e; --accent:#6d9bff; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width:1100px; margin:0 auto; padding:20px 16px 40px; }
+  .stage { background:#000; border-radius:10px; overflow:hidden; border:1px solid var(--line); }
+  canvas { display:block; width:100%; height:auto; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:12px; }
+  button { font:inherit; padding:7px 12px; border-radius:7px; border:1px solid var(--line); background:var(--panel); color:var(--ink); cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button:disabled { opacity:.5; cursor:default; }
+  input[type=range] { flex:1 1 200px; accent-color:var(--accent); }
+  .time { font-variant-numeric: tabular-nums; color:var(--muted); min-width:92px; text-align:right; }
+  .status { margin-top:10px; color:var(--muted); min-height:1.4em; }
+  .result { margin-top:14px; display:none; }
+  .result video { width:100%; max-width:560px; border-radius:8px; border:1px solid var(--line); }
+  .result a { color:var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <div class="stage"><canvas id="c"></canvas></div>
+  <div class="bar">
+    <button id="play">Pause</button>
+    <input id="scrub" type="range" min="0" max="1000" value="0" aria-label="Scrub">
+    <span class="time" id="time">0.00 s</span>
+  </div>
+  <div class="bar">
+    <button class="primary" id="mp4">Export MP4</button>
+    <button id="webm">Export WebM (real-time)</button>
+    <button id="png">Save frame PNG</button>
+  </div>
+  <div class="status" id="status"></div>
+  <div class="result" id="result"><video id="out" controls playsinline loop></video>
+    <p><a id="dl" download>Download the file</a> - if the link does nothing here, right-click the video and choose "Save video as".</p></div>
+</main>
+<script>
+// ---------------------------------------------------------------- motion kit
+const clamp01 = t => t < 0 ? 0 : t > 1 ? 1 : t;
+const C1 = 1.70158, C3 = C1 + 1;
+const bounceOut = t => { const n=7.5625, d=2.75;
+  if (t < 1/d) return n*t*t; if (t < 2/d) return n*(t-=1.5/d)*t+0.75;
+  if (t < 2.5/d) return n*(t-=2.25/d)*t+0.9375; return n*(t-=2.625/d)*t+0.984375; };
+const inOut = f => t => t < .5 ? f(2*t)/2 : 1 - f(2-2*t)/2;
+const EASE = {
+  linear: t => t,
+  in_sine: t => 1 - Math.cos(t*Math.PI/2), out_sine: t => Math.sin(t*Math.PI/2),
+  in_out_sine: t => -(Math.cos(Math.PI*t) - 1)/2,
+  in_quad: t => t*t, out_quad: t => 1-(1-t)**2,
+  in_cubic: t => t**3, out_cubic: t => 1-(1-t)**3,
+  in_quart: t => t**4, out_quart: t => 1-(1-t)**4,
+  in_quint: t => t**5, out_quint: t => 1-(1-t)**5,
+  in_expo: t => t===0 ? 0 : 2**(10*t-10), out_expo: t => t===1 ? 1 : 1-2**(-10*t),
+  in_back: t => C3*t**3 - C1*t*t, out_back: t => 1 + C3*(t-1)**3 + C1*(t-1)**2,
+  out_elastic: t => (t===0||t===1) ? t : 2**(-10*t)*Math.sin((t*10-0.75)*(2*Math.PI)/3)+1,
+  out_bounce: bounceOut,
+};
+for (const k of ['quad','cubic','quart','quint','expo','back']) EASE['in_out_'+k] = inOut(EASE['in_'+k]);
+const ease = (e, t) => (typeof e === 'function' ? e : EASE[e])(clamp01(t));
+const lerp = (a, b, t) => Array.isArray(a) ? a.map((v, i) => lerp(v, b[i], t)) : a + (b - a) * t;
+const progress = (t, t0, t1, e='linear') => t1 <= t0 ? (t >= t1 ? 1 : 0) : ease(e, (t - t0)/(t1 - t0));
+const tween = (t, t0, t1, a, b, e='out_cubic') => lerp(a, b, progress(t, t0, t1, e));
+const stagger = (i, start, each=0.06) => start + i*each;
+function spring(t, stiffness=170, damping=26, mass=1) {
+  if (t <= 0) return 0;
+  const w0 = Math.sqrt(stiffness/mass), z = damping/(2*Math.sqrt(stiffness*mass));
+  if (z < 1) { const wd = w0*Math.sqrt(1-z*z);
+    return 1 - Math.exp(-z*w0*t)*(Math.cos(wd*t) + z*w0/wd*Math.sin(wd*t)); }
+  return 1 - Math.exp(-w0*t)*(1 + w0*t);
+}
+function keys(t, ks) {           // [[time, value], [time, value, easing], ...]
+  if (t <= ks[0][0]) return ks[0][1];
+  for (let i = 1; i < ks.length; i++)
+    if (t <= ks[i][0]) return tween(t, ks[i-1][0], ks[i][0], ks[i-1][1], ks[i][1], ks[i][2] || 'in_out_cubic');
+  return ks[ks.length-1][1];
+}
+function rrect(ctx, x, y, w, h, r) { // centred rounded rectangle path
+  ctx.beginPath(); ctx.roundRect(x - w/2, y - h/2, w, h, Math.min(r, w/2, h/2));
+}
+function seeded(seed) {           // deterministic random for particles
+  return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+
+// ============================================================== SCENE START
+const VIDEO = { width: 1920, height: 1080, fps: 30, duration: 5 };
+
+function draw(ctx, t) {
+  const { width: W, height: H } = VIDEO;
+  const g = ctx.createLinearGradient(0, 0, W, H);
+  g.addColorStop(0, '#0b1020'); g.addColorStop(1, '#1b2346');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  const out = progress(t, 4.3, 4.9, 'in_cubic');       // shared exit
+  ctx.globalAlpha = 1 - out;
+
+  const s = spring(t - 0.2, 180, 20);                  // title settles
+  ctx.fillStyle = '#f5f7ff';
+  ctx.font = '700 120px system-ui, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.save(); ctx.globalAlpha *= clamp01(s * 1.4);
+  ctx.fillText('Made in the browser', W/2, H/2 - 90 + (1 - s)*80);
+  ctx.restore();
+
+  for (let i = 0; i < 5; i++) {                         // staggered dots
+    const p = spring(t - stagger(i, 0.8, 0.1), 160, 14);
+    ctx.fillStyle = i === 2 ? '#5eead4' : '#7c8cff';
+    ctx.beginPath(); ctx.arc(W/2 + (i - 2)*110, H/2 + 90, 26*p, 0, Math.PI*2); ctx.fill();
+  }
+  const r = progress(t, 1.6, 3.2, 'in_out_cubic');      // progress ring
+  ctx.strokeStyle = '#5eead4'; ctx.lineWidth = 14; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(W/2, H/2 + 260, 60, -Math.PI/2, -Math.PI/2 + r*2*Math.PI); ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+// ================================================================ SCENE END
+
+// ---------------------------------------------------------------- player
+const cv = document.getElementById('c');
+cv.width = VIDEO.width; cv.height = VIDEO.height;
+const ctx = cv.getContext('2d');
+const $ = id => document.getElementById(id);
+let playing = true, t0 = performance.now(), tNow = 0, busy = false;
+function show(t) {
+  tNow = t; ctx.save(); draw(ctx, t); ctx.restore();
+  $('scrub').value = Math.round(1000 * t / VIDEO.duration);
+  $('time').textContent = t.toFixed(2) + ' s';
+}
+function loop(now) {
+  if (playing && !busy) show(((now - t0) / 1000) % VIDEO.duration);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+$('play').onclick = () => { playing = !playing; $('play').textContent = playing ? 'Pause' : 'Play';
+  if (playing) t0 = performance.now() - tNow * 1000; };
+$('scrub').oninput = e => { playing = false; $('play').textContent = 'Play';
+  show(VIDEO.duration * e.target.value / 1000); };
+const status = m => $('status').textContent = m;
+function offer(blob, name) {
+  const url = URL.createObjectURL(blob);
+  $('out').src = url; $('dl').href = url; $('dl').download = name;
+  $('result').style.display = 'block';
+  status(`${name}: ${(blob.size/1e6).toFixed(2)} MB`);
+  window.__lastExport = blob;           // for automated tests
+}
+$('png').onclick = () => cv.toBlob(b => offer(b, 'frame.png'));
+
+// ---------------------------------------------------------------- MP4 export
+const u32 = v => [v>>>24&255, v>>>16&255, v>>>8&255, v&255];
+const u16 = v => [v>>>8&255, v&255];
+const str = s => [...s].map(c => c.charCodeAt(0));
+function box(type, ...parts) {
+  const body = parts.flatMap(p => p instanceof Uint8Array ? [p] : [Uint8Array.from(p.flat(Infinity))]);
+  const len = 8 + body.reduce((n, b) => n + b.length, 0);
+  const out = new Uint8Array(len); out.set(u32(len), 0); out.set(str(type), 4);
+  let o = 8; for (const b of body) { out.set(b, o); o += b.length; } return out;
+}
+const full = (type, v, f, ...parts) => box(type, [v, f>>>16&255, f>>>8&255, f&255], ...parts);
+const MATRIX = [u32(0x10000), u32(0), u32(0), u32(0), u32(0x10000), u32(0), u32(0), u32(0), u32(0x40000000)];
+
+// codec: {entry: 'avc1' | 'vp09', config: Uint8Array for avcC / vpcC}
+function muxMP4(samples, codec, W, H, fps) {
+  const ts = Math.round(fps * 1000), delta = 1000, n = samples.length;
+  const durMs = Math.round(n * 1000 / fps), durTs = n * delta;
+  const ftyp = box('ftyp', str('isom'), u32(512), str('isom'), str('iso2'), str('avc1'), str('mp41'));
+  const dataLen = samples.reduce((s, x) => s + x.data.length, 0);
+  const cfg = codec.entry === 'avc1' ? box('avcC', codec.config) : full('vpcC', 1, 0, codec.config);
+  const entry = box(codec.entry, new Array(6).fill(0), u16(1), u16(0), u16(0), new Array(12).fill(0),
+    u16(W), u16(H), u32(0x480000), u32(0x480000), u32(0), u16(1),
+    new Array(32).fill(0), u16(0x18), u16(0xffff), cfg);
+  const keysIdx = samples.flatMap((s, i) => s.key ? [u32(i + 1)] : []);
+  const stbl = (off) => box('stbl',
+    full('stsd', 0, 0, u32(1), entry),
+    full('stts', 0, 0, u32(1), u32(n), u32(delta)),
+    full('stss', 0, 0, u32(keysIdx.length), keysIdx),
+    full('stsc', 0, 0, u32(1), u32(1), u32(n), u32(1)),
+    full('stsz', 0, 0, u32(0), u32(n), samples.map(s => u32(s.data.length))),
+    full('stco', 0, 0, u32(1), u32(off)));
+  const moov = off => box('moov',
+    full('mvhd', 0, 0, u32(0), u32(0), u32(1000), u32(durMs), u32(0x10000), u16(0x100), new Array(10).fill(0), MATRIX, new Array(24).fill(0), u32(2)),
+    box('trak',
+      full('tkhd', 0, 3, u32(0), u32(0), u32(1), u32(0), u32(durMs), new Array(8).fill(0), u16(0), u16(0), u16(0), u16(0), MATRIX, u32(W << 16), u32(H << 16)),
+      box('mdia',
+        full('mdhd', 0, 0, u32(0), u32(0), u32(ts), u32(durTs), u16(0x55c4), u16(0)),
+        full('hdlr', 0, 0, u32(0), str('vide'), new Array(12).fill(0), str('VideoHandler'), [0]),
+        box('minf', full('vmhd', 0, 1, new Array(8).fill(0)),
+          box('dinf', full('dref', 0, 0, u32(1), full('url ', 0, 1))),
+          stbl(off)))));
+  const mdatHead = Uint8Array.from([...u32(8 + dataLen), ...str('mdat')]);
+  const parts = [ftyp, mdatHead, ...samples.map(s => s.data), moov(ftyp.length + 8)];
+  return new Blob(parts, { type: 'video/mp4' });
+}
+
+async function pickConfig(W, H, fps) {
+  // H.264 first: it plays everywhere (QuickTime, Windows, phones, every editor).
+  // VP9-in-MP4 second: plays in Chrome, Edge, Firefox, VLC; not QuickTime.
+  const bitrate = Math.round(W * H * fps * 0.2);        // ~12 Mbps at 1080p30
+  const tries = ['avc1.640033', 'avc1.64002A', 'avc1.640028', 'avc1.4D0033', 'avc1.4D0028', 'avc1.42E033', 'avc1.42E01F']
+    .map(codec => ({ codec, avc: { format: 'avc' } }))
+    .concat(['vp09.00.40.08', 'vp09.00.50.08', 'vp09.00.10.08'].map(codec => ({ codec })));
+  for (const t of tries) {
+    const c = { ...t, width: W, height: H, bitrate, framerate: fps };
+    try { if ((await VideoEncoder.isConfigSupported(c)).supported) return c; } catch (e) {}
+  }
+  return null;
+}
+
+function vpcC(codecString) {    // vp09.PP.LL.DD -> VPCodecConfigurationRecord
+  const [, p, l, d] = codecString.split('.').map(Number);
+  return new Uint8Array([p, l, (d << 4) | (1 << 1) | 0, 1, 1, 1, 0, 0]);  // 4:2:0, BT.709, limited range
+}
+
+async function exportMP4() {
+  const { width: W, height: H, fps, duration } = VIDEO;
+  if (!('VideoEncoder' in window)) { status('This browser has no WebCodecs; using WebM instead.'); return exportWebM(); }
+  const config = await pickConfig(W, H, fps);
+  if (!config) { status('No H.264 or VP9 encoder in this browser; using WebM instead.'); return exportWebM(); }
+  const isAvc = config.codec.startsWith('avc1');
+  busy = true; lock(true);
+  const n = Math.round(duration * fps), samples = []; let avcC = null, failure = null;
+  const enc = new VideoEncoder({
+    output: (chunk, meta) => {
+      const d = meta && meta.decoderConfig && meta.decoderConfig.description;
+      if (d && !avcC) avcC = ArrayBuffer.isView(d) ? new Uint8Array(d.buffer, d.byteOffset, d.byteLength).slice() : new Uint8Array(d).slice();
+      const data = new Uint8Array(chunk.byteLength); chunk.copyTo(data);
+      samples.push({ data, key: chunk.type === 'key' });
+    },
+    error: e => { failure = e; },
+  });
+  enc.configure(config);
+  try {
+    for (let i = 0; i < n && !failure; i++) {
+      ctx.save(); draw(ctx, i / fps); ctx.restore();
+      const frame = new VideoFrame(cv, { timestamp: Math.round(i * 1e6 / fps), duration: Math.round(1e6 / fps) });
+      enc.encode(frame, { keyFrame: i % (fps * 2) === 0 });
+      frame.close();
+      if (enc.encodeQueueSize > 6) await new Promise(r => enc.addEventListener('dequeue', r, { once: true }));
+      if (i % 10 === 0) { status(`Encoding frame ${i + 1} / ${n} (${config.codec})`); await new Promise(r => setTimeout(r)); }
+    }
+    await enc.flush(); enc.close();
+    if (failure) throw failure;
+    if (isAvc && !avcC) throw new Error('encoder returned no avcC');
+    const codec = isAvc ? { entry: 'avc1', config: avcC } : { entry: 'vp09', config: vpcC(config.codec) };
+    offer(muxMP4(samples, codec, W, H, fps), 'motion.mp4');
+    if (!isAvc) status($('status').textContent + ' - VP9 (this browser has no H.264 encoder; for QuickTime use Chrome, Edge or Safari)');
+  } catch (e) { status('MP4 export failed: ' + e.message + ' - trying WebM.'); busy = false; lock(false); return exportWebM(); }
+  busy = false; lock(false);
+}
+
+// ---------------------------------------------------------------- WebM fallback (MediaRecorder, real time)
+async function exportWebM() {
+  const { fps, duration } = VIDEO;
+  const types = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
+  const type = types.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t));
+  if (!type) { status('This browser cannot record video. Try desktop Chrome, Edge or Safari.'); return; }
+  busy = true; lock(true);
+  const stream = cv.captureStream(0), track = stream.getVideoTracks()[0];
+  const rec = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 12e6 });
+  const parts = []; rec.ondataavailable = e => e.data.size && parts.push(e.data);
+  const done = new Promise(r => rec.onstop = r);
+  rec.start();
+  const n = Math.round(duration * fps), start = performance.now();
+  for (let i = 0; i < n; i++) {
+    ctx.save(); draw(ctx, i / fps); ctx.restore(); track.requestFrame();
+    const wait = start + (i + 1) * 1000 / fps - performance.now();
+    if (wait > 0) await new Promise(r => setTimeout(r, wait));
+    if (i % 10 === 0) status(`Recording ${(i / fps).toFixed(1)} / ${duration} s`);
+  }
+  rec.stop(); await done;
+  const ext = type.startsWith('video/mp4') ? 'mp4' : 'webm';
+  offer(new Blob(parts, { type: type.split(';')[0] }), 'motion.' + ext);
+  busy = false; lock(false);
+}
+function lock(on) { for (const id of ['mp4', 'webm', 'png']) $(id).disabled = on; }
+$('mp4').onclick = exportMP4;
+$('webm').onclick = exportWebM;
+window.__exportMP4 = exportMP4;         // for automated tests
+window.__muxMP4 = muxMP4;
+</script>
+</body>
+</html>
