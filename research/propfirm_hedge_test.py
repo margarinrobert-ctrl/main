@@ -194,6 +194,15 @@ def test_closed_forms():
               near(mu, 4 * pp, math.sqrt(4 * pp * (1 - pp) / runs)), f"sim {mu:.3f}")
         check(f"all-in, rule off, cost {cost:.0f}: P(4 funded) = {pp:.4f}^4 = {pp ** 4:.4f}",
               near(p4, pp ** 4, math.sqrt(pp ** 4 * (1 - pp ** 4) / runs)), f"sim {p4:.4f}")
+        # odd N: four all-in pairs on day 1, then the 9th account trades alone (it had no partner)
+        s = M.simulate(9, "allin", r, f, pol, runs, 16)
+        mu = sum(s.passed) / runs
+        p5 = sum(x == 5 for x in s.passed) / runs
+        var = 4 * pp * (1 - pp) + p1 * (1 - p1)
+        check(f"all-in N=9, rule off, cost {cost:.0f}: E[passes] = 4 x {pp:.4f} + {p1:.4f} = {4 * pp + p1:.3f}",
+              near(mu, 4 * pp + p1, math.sqrt(var / runs)), f"sim {mu:.3f}")
+        check(f"all-in N=9, rule off, cost {cost:.0f}: P(5 funded) = {pp:.4f}^4 x {p1:.4f} = {pp ** 4 * p1:.4f}",
+              near(p5, pp ** 4 * p1, math.sqrt(pp ** 4 * p1 * (1 - pp ** 4 * p1) / runs)), f"sim {p5:.4f}")
         # copy: every account takes the same trade, so it is all or nothing
         s = M.simulate(8, "copy", r, f, pol, runs, 13)
         check(f"copy, cost {cost:.0f}: every run is 0 or 8 passes", set(s.passed) <= {0, 8})

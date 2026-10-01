@@ -29,7 +29,8 @@ every futures prop firm prohibits opposite positions across accounts and voids p
 Usage:
     python research/propfirm_hedge.py                     # 8 accounts, the default rules
     python research/propfirm_hedge.py --n 8 --runs 20000 --leg-cost 19 --payout-cap 1000
-    python research/propfirm_hedge.py --sweep             # N = 2..20 and the payout-rule grid
+    python research/propfirm_hedge.py --sweep             # N = 2..10, 12, 16, 20 and the rule grids
+    python research/propfirm_hedge.py --baselines         # add the unhedged zero-edge comparisons
 """
 from __future__ import annotations
 
@@ -342,20 +343,26 @@ def bound(n: int, r: EvalRules, f: FundedRules) -> tuple[float, float]:
     return passes, int(passes) * f.mll * f.split
 
 
-def report(n, r, f, pol, runs, seed, void):
+HEDGED = ("hedge", "allin")
+BASELINES = ("independent", "copy")
+
+
+def report(n, r, f, pol, runs, seed, void, modes=HEDGED):
     print(f"\n=== {n} x ${r.start / 1000:.0f}K evals @ ${r.fee:.2f} = ${n * r.fee:,.2f} invested "
-          f"| leg cost ${pol.leg_cost:.0f}/day | {runs:,} runs ===")
+          f"| consistency {r.consistency:.0%} | leg cost ${pol.leg_cost:.0f}/day | {runs:,} runs ===")
     pb, gb = bound(n, r, f)
     print(f"accounting bound (zero costs, perfect play): <= {pb:.2f} passes -> {int(pb)} funded "
           f"-> <= ${gb:,.0f} to you over the funded accounts' whole lives")
-    print(f"\n{'mode':<12} {'E[funded]':>9} {'E[payouts]':>10} {'E[$ to you]':>11} {'E[net]':>8} "
+    if n % 2:
+        print(f"odd N: each day one account has no partner and sits out; the last one left trades alone")
+    print(f"\n{'mode':<12} {'E[funded]':>9} {'4+ funded':>9} {'E[payouts]':>10} {'E[$ to you]':>11} {'E[net]':>8} "
           f"{'P(net>0)':>8} {'p5 net':>8} {'p95 net':>8} {'med days':>8}")
     out = {}
-    for mode in ("hedge", "allin", "independent", "copy"):
+    for mode in modes:
         s = simulate(n, mode, r, f, pol, runs, seed)
         out[mode] = s
-        print(f"{mode:<12} {mean(s.passed):>9.2f} {mean(s.payouts):>10.2f} "
-              f"{f.split * mean(s.gross):>11,.0f} {mean(s.net):>8,.0f} "
+        print(f"{mode:<12} {mean(s.passed):>9.2f} {100 * mean(x >= 4 for x in s.passed):>8.1f}% "
+              f"{mean(s.payouts):>10.2f} {f.split * mean(s.gross):>11,.0f} {mean(s.net):>8,.0f} "
               f"{100 * mean(x > 0 for x in s.net):>7.1f}% {q(s.net, .05):>8,.0f} {q(s.net, .95):>8,.0f} "
               f"{q(s.days, .5):>8}")
     print(f"\nfunded accounts out of {n}:")
@@ -366,49 +373,61 @@ def report(n, r, f, pol, runs, seed, void):
         print(f"  {mode:<12} {dist(s.payouts, 0, min(max(s.payouts), 8))}")
     se = max(math.sqrt(sum((x - mean(s.net)) ** 2 for x in s.net) / runs) for s in out.values()) / math.sqrt(runs)
     print(f"Monte Carlo standard error: E[net] <= ${se:,.0f}, probabilities <= {50 / math.sqrt(runs):.1f} pts")
-    h = out["hedge"]
-    er = f.split * mean(h.gross)
     inv = n * r.fee
-    print(f"\nif the firm voids hedged payouts with probability p:  E[net] = (1-p) x ${er:,.0f} - ${inv:,.0f}")
-    for p in void:
-        print(f"   p = {p:.0%}:  E[net] = ${(1 - p) * er - inv:,.0f}")
-    if er > 0:
-        print(f"   break-even p = {1 - inv / er:.0%}")
+    print(f"\nif the firm voids hedged payouts with probability p:  E[net] = (1-p) x E[$ to you] - ${inv:,.0f}")
+    for mode, s in out.items():
+        er = f.split * mean(s.gross)
+        row = "  ".join(f"p={p:.0%}: ${(1 - p) * er - inv:,.0f}" for p in void)
+        be = f"   break-even p = {1 - inv / er:.0%}" if er > 0 else ""
+        print(f"  {mode:<12} {row}{be}")
     return out
 
 
-def sweep(r, f, pol, runs, seed):
-    print("\n=== accounts bought vs outcome: hedge (exit together), allin (each leg risks its whole"
-          " cushion), independent (unhedged, zero edge) ===")
-    print(f"{'N':>3} {'invested':>9} {'bound':>6} | {'E[funded]':>9} {'hedge':>6} {'allin':>6} {'indep':>6} | "
-          f"{'E[net]':>6} {'hedge':>6} {'allin':>6} {'indep':>6} | {'P(net>0)':>8} {'hedge':>6} {'allin':>6} {'indep':>6}")
-    for n in (2, 3, 4, 6, 8, 10, 12, 16, 20):
-        ss = [simulate(n, m, r, f, pol, runs, seed) for m in ("hedge", "allin", "independent")]
+SWEEP_N = (2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 16, 20)
+
+
+def sweep(r, f, pol, runs, seed, modes=HEDGED):
+    print(f"\n=== accounts bought vs outcome, consistency {r.consistency:.0%}: hedge = exit together, "
+          f"allin = each leg risks its whole cushion ===")
+    cols = ("E[funded]", "4+ funded", "E[payouts]", "E[$ to you]", "E[net]", "P(net>0)")
+    print(f"{'N':>3} {'invested':>9} {'bound':>6} " + " | ".join(f"{c:>9} " + " ".join(f"{m[:6]:>7}" for m in modes)
+                                                     for c in cols))
+    for n in SWEEP_N:
+        ss = [simulate(n, m, r, f, pol, runs, seed) for m in modes]
         pb, _ = bound(n, r, f)
-        print(f"{n:>3} {n * r.fee:>9,.0f} {pb:>6.2f} | {'':>9} "
-              + " ".join(f"{mean(x.passed):>6.2f}" for x in ss) + f" | {'':>6} "
-              + " ".join(f"{mean(x.net):>6,.0f}" for x in ss) + f" | {'':>8} "
-              + " ".join(f"{100 * mean(v > 0 for v in x.net):>5.1f}%" for x in ss))
+        vals = (
+            [f"{mean(x.passed):>7.2f}" for x in ss],
+            [f"{100 * mean(v >= 4 for v in x.passed):>6.1f}%" for x in ss],
+            [f"{mean(x.payouts):>7.2f}" for x in ss],
+            [f"{f.split * mean(x.gross):>7,.0f}" for x in ss],
+            [f"{mean(x.net):>+7,.0f}" for x in ss],
+            [f"{100 * mean(v > 0 for v in x.net):>6.1f}%" for x in ss],
+        )
+        print(f"{n:>3} {n * r.fee:>9,.0f} {pb:>6.2f} " + " | ".join(f"{'':>9} " + " ".join(v) for v in vals))
 
-    print("\n=== hedge, N=8: sensitivity to the funded rules the screenshots do not state ===")
-    print(f"{'payout cap':>10} {'frac':>5} {'split':>5} {'E[payouts]':>10} {'E[$ to you]':>11} {'E[net]':>8}")
-    for cap in (500, 1_000, 2_000, 1e9):
-        for frac in (0.5, 1.0):
-            for split in (0.8, 0.9, 1.0):
-                f2 = replace(f, payout_cap=cap, payout_frac=frac, split=split)
-                s = simulate(8, "hedge", r, f2, pol, max(runs // 4, 1000), seed)
-                cs = "none" if cap > 1e8 else f"{cap:,.0f}"
-                print(f"{cs:>10} {frac:>5.0%} {split:>5.0%} {mean(s.payouts):>10.2f} "
-                      f"{split * mean(s.gross):>11,.0f} {mean(s.net):>8,.0f}")
+    small = max(runs // 2, 1000)
+    print(f"\n=== N=8, consistency {r.consistency:.0%}: the funded rules the screenshots do not state ===")
+    print(f"{'payout cap':>10} {'frac':>5} {'split':>5} | " + " | ".join(f"{m}: E[payouts] E[$ to you] E[net]" for m in modes))
+    for cap, frac, split in ((500, .5, .9), (1_000, .5, .8), (1_000, .5, .9), (1_000, 1., .9), (1_000, 1., 1.),
+                             (1e9, 1., .9)):
+        f2 = replace(f, payout_cap=cap, payout_frac=frac, split=split)
+        cs = "none" if cap > 1e8 else f"{cap:,.0f}"
+        cells = []
+        for m in modes:
+            s = simulate(8, m, r, f2, pol, small, seed)
+            cells.append(f"{mean(s.payouts):>{len(m) + 12}.2f} {split * mean(s.gross):>11,.0f} {mean(s.net):>+6,.0f}")
+        print(f"{cs:>10} {frac:>5.0%} {split:>5.0%} | " + " | ".join(cells))
 
-    print("\n=== hedge, N=8: costs and step size ===")
-    print(f"{'leg cost':>8} {'eval step':>9} {'funded step':>11} {'E[funded]':>9} {'E[$ to you]':>11} {'E[net]':>8}")
+    print(f"\n=== N=8, consistency {r.consistency:.0%}: costs and funded bracket ===")
+    print(f"{'leg cost':>8} {'funded step':>11} | " + " | ".join(f"{m}: E[funded] E[$ to you] E[net]" for m in modes))
     for lc in (0, 10, 19, 38):
-        for es, fs in ((625, 250), (625, 500), (400, 150)):
-            p2 = replace(pol, leg_cost=lc, eval_step=es, funded_step=fs)
-            s = simulate(8, "hedge", r, f, p2, max(runs // 4, 1000), seed)
-            print(f"{lc:>8} {es:>9} {fs:>11} {mean(s.passed):>9.2f} {f.split * mean(s.gross):>11,.0f} "
-                  f"{mean(s.net):>8,.0f}")
+        for fs in (250, 500):
+            p2 = replace(pol, leg_cost=lc, funded_step=fs)
+            cells = []
+            for m in modes:
+                s = simulate(8, m, r, f, p2, small, seed)
+                cells.append(f"{mean(s.passed):>{len(m) + 11}.2f} {f.split * mean(s.gross):>11,.0f} {mean(s.net):>+6,.0f}")
+            print(f"{lc:>8} {fs:>11} | " + " | ".join(cells))
 
 
 def main():
@@ -428,14 +447,17 @@ def main():
     ap.add_argument("--activation", type=float, default=FundedRules.activation_fee)
     ap.add_argument("--void", type=float, nargs="*", default=[0.0, 0.25, 0.5, 0.9])
     ap.add_argument("--sweep", action="store_true")
+    ap.add_argument("--baselines", action="store_true",
+                    help="also run the unhedged zero-edge baselines (independent, copy)")
     a = ap.parse_args()
     r = EvalRules(fee=a.fee, consistency=a.consistency)
     f = FundedRules(payout_cap=a.payout_cap, payout_frac=a.payout_frac, split=a.split,
                     activation_fee=a.activation)
     pol = Policy(leg_cost=a.leg_cost, eval_step=a.eval_step, funded_step=a.funded_step)
-    report(a.n, r, f, pol, a.runs, a.seed, a.void)
+    modes = HEDGED + BASELINES if a.baselines else HEDGED
+    report(a.n, r, f, pol, a.runs, a.seed, a.void, modes)
     if a.sweep:
-        sweep(r, f, pol, a.runs, a.seed)
+        sweep(r, f, pol, a.runs, a.seed, modes)
 
 
 if __name__ == "__main__":
