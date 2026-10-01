@@ -1,11 +1,12 @@
 # Hedging prop-firm evaluations across accounts: what 8 accounts actually buy
 
-The plan being tested: buy N $25K Flex evaluations, go long in half and short in the other half with
-the same bracket, pass whichever side wins, then hedge the funded accounts the same way and withdraw
-from the winners. The question as asked: *buy 8 accounts, get 4 funded, get 2 payouts or 1 max payout.*
+The plan being tested: buy N $25K Flex evaluations, go long in half and short in the other half,
+pass whichever side wins, then hedge the funded accounts the same way and withdraw from the
+winners. The question as asked: *buy 8 accounts, get 4 funded, get 2 payouts or 1 max payout* —
+and then: *risk the whole $1,000 on every account to reach the $1,250 target.*
 
-Everything below is `research/propfirm_hedge.py` (stdlib + numpy, no market data needed — see §1),
-20,000 Monte Carlo runs per row.
+Everything below is `research/propfirm_hedge.py` (stdlib only, no market data needed — see §1),
+8,000–10,000 Monte Carlo runs per row.
 
 ## 0. The rules modelled
 
@@ -24,180 +25,190 @@ From the two screenshots, verbatim:
 **Not on the screenshots, so assumed and exposed as flags:** threshold locks at start + $100; "5 days
 to payout" means 5 winning days of ≥ $100; each payout request withdraws up to 50% of profit, capped at
 $1,000, and cannot take the balance below max(start, threshold) + $100; 90/10 split; no activation
-fee. §4 shows how much these move the answer. Costs: **$19 per account per trading day** (one NQ round
-turn — $4 commission, one tick spread, one tick slippage, the repo's standard figure).
+fee. Whether the 50% consistency rule gates the *pass* or only a later payout is the single biggest
+unknown, so every headline is given both ways (`--consistency 1.0` switches it off). Costs: **$19 per
+account per trading day** (one NQ round turn — $4 commission, one tick spread, one tick slippage, the
+repo's standard figure).
 
-## 1. It is an accounting identity before it is a simulation
+## 1. The accounting identity
 
-A hedged pair has no market exposure, so the market is only a coin that decides *which* account
-wins. Summed over every account in the group, P&L is exactly **minus the costs**. Every dollar an
-account gains was lost by its partner, and an account can only lose until it hits its threshold —
-at most $1,000. So:
+While two accounts hold opposite positions, the market is only a coin that decides *which* one
+wins: their combined P&L is exactly minus the costs. An account can only lose until it touches its
+threshold — at most $1,000. So a group that is hedged *the whole time* obeys
 
 ```
 passes x $1,250  <=  busts x $1,000 - costs
-passes           <=  N x 1,000 / 2,250  =  0.444 N          (zero costs, perfect play)
+passes           <=  N x 1,000 / 2,250  =  0.444 N          (= 3.56 for 8 accounts)
 ```
 
-**8 accounts hedged only against each other cannot produce 4 funded accounts.** The ceiling is
-3.56 with zero costs; four passes need $5,000 of gains, and the other four accounts only hold
-$4,000 of drawdown between them. This is a statement about the *closed* group, and it rests on two
-things worth checking with the firm:
+That ceiling also holds **on average** for any zero-edge trading, hedged or not: a driftless account
+is a martingale, so P(pass) x $1,250 = P(bust) x $1,000 at best. What differs between plans is only
+the spread around it — and how much of the ceiling a plan wastes.
 
-- **The threshold is enforced in real time.** "EOD" here means the threshold is *recalculated* at
-  the close; if the firm only *checks* it at the close, a loser can sit $2,000 under water intraday
-  and hand its partner $2,000, and the ceiling no longer holds.
-- **Nothing outside the group pays.** Unhedged accounts are paid by the market, so 4 of 8 is
-  possible — the same 8 accounts traded independently with zero edge get 4+ funded in **42.9%** of
-  runs (copy-traded, 41.4%, but 0 funded in 58.6%). The ceiling still holds *on average* — a
-  zero-edge account is a martingale — but not in any one run. Hedging is exactly what removes that
-  upside: hedged, 4+ funded happens in 0.0% of runs.
+The same identity caps the funded phase while the funded accounts are hedged: every dollar
+withdrawn was lost by another funded account, so gross withdrawals ≤ funded accounts x $1,000 − costs,
+and less in practice, because once a threshold locks at start + $100 the profit below it is trapped.
 
-The same identity caps the funded phase: every dollar withdrawn was lost by another funded account, so
+Two things break the ceiling *for a single run* (never on average):
+
+- **A leg left naked.** Once one account busts, its partner is unhedged and the market, not the
+  group, pays it. This is exactly what §2's all-in plan does for the last $250.
+- **A threshold checked only at the close.** "EOD" means the threshold is *recalculated* at the
+  close; if the firm also only *checks* it then, a loser can sit $2,000 under water intraday and hand
+  its partner $2,000. Ask the firm.
+
+## 2. Risk the whole $1,000 on every account: the all-in pair
+
+Account A long and account B short, same size, same entry. Each leg's stop is its **own threshold**
+($1,000 away) and its target is the **$1,250 it needs** — so the two legs do *not* exit together.
+At 2 NQ ($40/pt) that is a 25-point stop and a 31.25-point target on both.
 
 ```
-gross withdrawn  <=  funded accounts x $1,000 - costs       (3 funded -> <= $2,700 to you at 90%)
+price moves 25 pts one way  ->  the losing account is closed at -$1,000
+                                 the winner is at +$1,000, 6.25 pts from target, 50 pts from its stop
+the winner, now naked        ->  reaches +$1,250 first with probability 50 / 56.25 = 88.9%
 ```
 
-and in practice well under that, because once an account's threshold locks at start + $100 the
-profit below it is trapped: it can no longer be donated to a partner or withdrawn.
+**One pass from every pair 88.9% of the time** (before costs), with both accounts gone 11.1% of the
+time. That is 0.889 passes per pair — exactly the 0.444-per-account ceiling. It is the efficient way
+to spend the drawdown: the loser donates all of its $1,000, and nothing is lost to partial wins
+or trailing. Checked against theory in the code: 0.8887 simulated vs 0.8889.
 
-## 2. The 8-account plan, simulated
+But the target is reached on **one day**, and a $1,250 day is 100% of the profit. **If the 50%
+consistency rule gates the pass, this does not pass** — the account then needs $2,500 of total
+profit. Respecting the rule means two days of $625, each still risking the whole cushion, which is
+less efficient. Both readings, 8 accounts, $522 invested:
 
-Policy: pair live accounts in similar states each day; bracket = the move that passes one of them
-today with consistency intact, else $625 (half the target, the largest day the 50% rule allows);
-the pair exits together when the winner makes the bracket or the loser touches its threshold, so no
-leg is ever left naked. An odd account sits the day out; the last survivor trades alone. Funded:
-same, $250 bracket (§5 has $500). Adjacent pairing beat strongest-vs-weakest and random pairing
-(3.01 / 2.82 / 2.90 passes at zero cost).
-
-8 accounts, $522 invested:
-
-| mode | E[funded] | E[payouts] | E[$ to you] | E[net] | P(net > 0) | 5th pct | 95th pct | median days |
+| plan | consistency | E[funded] | 4+ funded | E[payouts] | E[$ to you] | E[net] | P(net > 0) | 5th pct |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **hedge** | **2.63** | **2.57** | **$686** | **+$164** | **49.8%** | −$399 | +$1,280 | 38 |
-| independent, unhedged | 3.28 | 3.39 | $959 | +$437 | 59.3% | −$522 | +$2,272 | 33 |
-| copy-traded, all same side | 3.31 | 3.42 | $962 | +$439 | 21.9% | −$522 | +$5,515 | 7 |
+| **all-in pairs** | **off** | **3.53** | **60.4%** | 2.90 | $901 | **+$378** | **68.9%** | −$316 |
+| exit-together hedge | off | 3.06 | 6.2% | 2.45 | $781 | +$259 | 53.6% | −$328 |
+| independent, unhedged | off | 3.54 | 50.1% | 1.67 | $1,024 | +$501 | 43.1% | −$522 |
+| copy-traded, same side | off | 3.55 | 44.4% | 1.68 | $1,023 | +$501 | 14.8% | −$522 |
+| **all-in pairs** | **50%** | **2.88** | **21.6%** | 2.30 | $753 | **+$230** | **50.5%** | −$453 |
+| exit-together hedge | 50% | 2.58 | 0.0% | 2.04 | $685 | +$162 | 42.1% | −$426 |
+| independent, unhedged | 50% | 2.90 | 31.8% | 1.38 | $849 | +$326 | 35.2% | −$522 |
+| copy-traded, same side | 50% | 2.88 | 36.0% | 1.41 | $871 | +$349 | 12.0% | −$522 |
 
-- Funded accounts out of 8, hedged: **3 in 63%** of runs, **2 in 37%**, never 4.
-- Payouts, hedged: 0 in 1%, 1 in 22%, 2 in 33%, 3 in 23%, 4+ in 21%. Average payout ≈ $265 to you
-  under the assumed 50%-of-profit rule — this is not a "max payout" plan.
+Funded accounts out of 8, all-in, consistency off: 4 in 60.4%, 3 in 32.2%, 2 in 6.9%, 1 in 0.5% —
+the binomial of four pairs at 88.9%. With consistency on: 5 in 3.9%, 4 in 17.7%, 3 in 42.0%, 2 in 32.8%.
 
-"Independent" and "copy" are the same accounts with **no edge at all**: random direction, same
-bracket, same costs. That row is the baseline the hedge has to beat, and it does not beat it.
+**So the original target — 8 accounts, 4 funded — is reachable, 60% of the time, if consistency does
+not gate the pass, and 22% if it does.** It is never reachable by the exit-together hedge with the
+rule on (0.0%), because that plan never leaves a leg naked.
 
-## 3. Hedging creates no edge — it gives some back
+"Independent" and "copy" are the same accounts with **no edge at all**: driftless price, same
+brackets, same costs. All-in pairs match them on E[funded] — as the martingale argument says they
+must — but with far less spread: P(net > 0) 68.9% against 43.1%, and no run in which all eight die.
+Hedging buys a narrower distribution, not a higher mean. (Independent shows a higher E[net] because
+its funded accounts are also unhedged, so their payouts are paid by the market rather than by each
+other.)
 
-The same rule this repo found for sizing (§9 of the protocol) applies across accounts. A zero-edge
-unhedged account is a martingale, so it obeys the same 0.444 ceiling *in expectation*; the hedge
-only makes the count nearly deterministic. What the hedge costs on top:
+## 3. Across group size
 
-1. **Waste in the pairing.** The winner only banks what the loser actually had left, so a win
-   against a partner with $356 of cushion is a $356 win, not a $625 one.
-2. **Both legs pay costs every day.** An unhedged account that busts early stops paying; a hedged
-   one is paying to be the other side of its partner's progress.
-3. **The lock traps profit on both sides of the pair.**
+E[funded] / E[net] / P(net > 0); hedge = exit together, all-in = §2, indep = unhedged zero edge.
 
-Result at 8 accounts: 2.63 funded against 3.28 unhedged, and +$164 expected against +$437. The
-hedge's only win is a milder bad case (5th percentile −$399 vs −$522). Across group size:
+Consistency rule **off**:
 
-| N | invested | ceiling | hedge E[funded] | E[payouts] | E[$ to you] | hedge E[net] | P(net>0) | unhedged E[net] | P(net>0) |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2 | $131 | 0.89 | 0.67 | 0.69 | $195 | +$64 | 32.5% | +$109 | 35.9% |
-| 4 | $261 | 1.78 | 1.42 | 1.43 | $395 | +$133 | 48.7% | +$222 | 49.9% |
-| 6 | $392 | 2.67 | 1.98 | 1.97 | $530 | +$139 | 46.5% | +$329 | 56.1% |
-| 8 | $522 | 3.56 | 2.63 | 2.57 | $686 | +$164 | 49.8% | +$437 | 59.3% |
-| 10 | $653 | 4.44 | 3.35 | 3.25 | $862 | +$209 | 56.8% | +$544 | 62.9% |
-| 12 | $784 | 5.33 | 4.03 | 3.85 | $1,021 | +$237 | 60.1% | +$651 | 65.9% |
-| 16 | $1,045 | 7.11 | 5.32 | 5.05 | $1,339 | +$294 | 64.8% | +$870 | 70.6% |
-| 20 | $1,306 | 8.89 | 6.70 | 6.31 | $1,667 | +$361 | 71.2% | +$1,101 | 74.8% |
+| N | invested | ceiling | hedge | all-in | indep | | hedge | all-in | indep | | hedge | all-in | indep |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2 | $131 | 0.89 | 0.78 | 0.88 | 0.88 | | +$99 | +$128 | +$122 | | 25.6% | 29.1% | 26.9% |
+| 3 | $196 | 1.33 | 1.09 | 1.32 | 1.32 | | +$113 | +$159 | +$193 | | 35.7% | 42.6% | 37.4% |
+| 4 | $261 | 1.78 | 1.53 | 1.77 | 1.76 | | +$148 | +$204 | +$264 | | 46.2% | 51.7% | 46.5% |
+| 6 | $392 | 2.67 | 2.27 | 2.65 | 2.68 | | +$197 | +$306 | +$387 | | 45.7% | 60.8% | 61.2% |
+| 8 | $522 | 3.56 | 3.06 | 3.53 | 3.54 | | +$259 | +$374 | +$501 | | 53.9% | 69.1% | 42.9% |
+| 12 | $784 | 5.33 | 4.56 | 5.29 | 5.29 | | +$367 | +$548 | +$748 | | 68.0% | 81.5% | 62.1% |
+| 16 | $1,045 | 7.11 | 6.11 | 7.07 | 7.09 | | +$492 | +$708 | +$1,020 | | 78.5% | 89.3% | 60.8% |
+| 20 | $1,306 | 8.89 | 7.59 | 8.83 | 8.82 | | +$568 | +$885 | +$1,252 | | 83.7% | 92.8% | 69.4% |
 
-Unhedged beats hedged at every N. Note what the unhedged column is saying: at a $65 fee and these
-(assumed) payout terms, a **zero-edge** trader has positive expectation. That is the structure of the
-product — losses cost you the fee, gains are paid in real money — and it is the only source of
-positive expectation anywhere in this study. The firm prices it with rules the screenshots do not
-show (payout caps, buffers, winning-day definitions, discretionary review), so treat that column as
-an upper bound, not an opportunity.
+Consistency rule **on (50%)**:
 
-## 4. The unstated payout rules move the answer more than anything you control
+| N | invested | ceiling | hedge | all-in | indep | | hedge | all-in | indep | | hedge | all-in | indep |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2 | $131 | 0.89 | 0.64 | 0.71 | 0.72 | | +$63 | +$65 | +$78 | | 21.2% | 23.5% | 22.3% |
+| 3 | $196 | 1.33 | 0.99 | 1.08 | 1.08 | | +$79 | +$97 | +$133 | | 31.3% | 35.2% | 31.8% |
+| 4 | $261 | 1.78 | 1.35 | 1.44 | 1.45 | | +$112 | +$140 | +$170 | | 41.4% | 44.9% | 40.3% |
+| 6 | $392 | 2.67 | 1.92 | 2.14 | 2.17 | | +$125 | +$178 | +$237 | | 38.9% | 47.1% | 52.6% |
+| 8 | $522 | 3.56 | 2.58 | 2.88 | 2.88 | | +$159 | +$228 | +$319 | | 42.1% | 50.3% | 35.1% |
+| 12 | $784 | 5.33 | 3.96 | 4.32 | 4.34 | | +$220 | +$324 | +$488 | | 53.2% | 61.0% | 51.6% |
+| 16 | $1,045 | 7.11 | 5.23 | 5.77 | 5.78 | | +$279 | +$391 | +$622 | | 57.1% | 65.9% | 50.2% |
+| 20 | $1,306 | 8.89 | 6.64 | 7.21 | 7.24 | | +$358 | +$478 | +$790 | | 64.5% | 71.3% | 57.3% |
 
-N = 8, hedged:
+All-in beats exit-together at every N on every column. With consistency off it sits within 1% of the
+ceiling throughout; the rule costs it about 18% of its passes.
+
+## 4. The unstated payout rules
+
+N = 8, exit-together hedge, consistency on (the funded phase is the same for both hedges):
 
 | payout cap | withdraw per request | split | E[payouts] | E[$ to you] | E[net] |
 | --- | --- | --- | --- | --- | --- |
-| $500 | 50% | 90% | 2.71 | $694 | +$172 |
-| $1,000 | 50% | 80% | 2.61 | $613 | +$90 |
-| **$1,000** | **50%** | **90%** | **2.61** | **$689** | **+$167** |
-| $1,000 | 100% | 90% | 2.24 | $834 | +$312 |
-| $1,000 | 100% | 100% | 2.24 | $927 | +$405 |
-| none | 100% | 90% | 2.22 | $832 | +$310 |
+| $500 | 50% | 90% | 2.20 | $635 | +$112 |
+| $1,000 | 50% | 80% | 2.01 | $590 | +$67 |
+| **$1,000** | **50%** | **90%** | **2.01** | **$664** | **+$141** |
+| $1,000 | 100% | 90% | 1.77 | $772 | +$250 |
+| $1,000 | 100% | 100% | 1.77 | $858 | +$335 |
+| none | 100% | 90% | 1.76 | $783 | +$260 |
 
-The cap barely binds (profits rarely reach it before a bust); the **fraction of profit you may
-withdraw per request** is what matters, because what is left in the account is what the lock traps.
-Read the firm's actual payout policy before believing any row.
+The cap barely binds; the **fraction of profit you may withdraw per request** is what matters,
+because what is left in the account is what the lock traps.
 
 ## 5. Costs and bracket size
 
-N = 8, hedged:
+N = 8, exit-together hedge, consistency on:
 
 | $/leg/day | eval step | funded step | E[funded] | E[$ to you] | E[net] |
 | --- | --- | --- | --- | --- | --- |
-| 0 | 625 | 250 | 3.02 | $1,255 | +$733 |
-| 10 | 625 | 500 | 2.79 | $1,074 | +$551 |
-| **19** | **625** | **250** | **2.64** | **$689** | **+$167** |
-| 19 | 625 | 500 | 2.64 | $909 | +$387 |
-| 19 | 400 | 150 | 2.35 | $410 | −$112 |
-| 38 | 625 | 250 | 2.46 | $390 | −$133 |
-| 38 | 625 | 500 | 2.47 | $685 | +$162 |
+| 0 | 625 | 250 | 2.97 | $1,099 | +$576 |
+| 10 | 625 | 500 | 2.74 | $911 | +$389 |
+| **19** | **625** | **250** | **2.57** | **$664** | **+$141** |
+| 19 | 625 | 500 | 2.60 | $754 | +$232 |
+| 19 | 400 | 150 | 2.34 | $502 | −$21 |
+| 38 | 625 | 500 | 2.42 | $581 | +$59 |
 
-Costs are paid per day, so **bigger, fewer days** wins: small brackets lose money. $38/leg is 2 NQ
-or ~13 MNQ — using 20 micros to hit a bracket costs more than one mini, so trade the fewest
-contracts that resolve the bracket intraday (1 NQ = 31 points for $625). A $500 funded bracket
-lifts E[net] to +$387 but makes it lumpier: **29.5% of runs get no payout at all**, 42% get one.
+Costs are paid per day, so bigger, fewer days win, which is the other reason all-in does well.
+Trade the fewest contracts that resolve the bracket intraday: 1 NQ is a 50-point stop and 62.5-point
+target for all-in, $19 a leg; 20 MNQ for the same dollars costs ~$57 a leg.
 
-## 6. The risk that is not in the market
+## 6. Firm terms
 
-Opposite positions across accounts are prohibited by essentially every futures prop firm, and they
-are easy to detect: one identity, same instrument, opposite sides, same timestamps. The usual
-remedy is closing every account and voiding payouts. With E[$ to you] = $686 and $522 invested:
-
-| P(firm voids hedged payouts) | E[net] |
-| --- | --- |
-| 0% | +$164 |
-| 25% | −$8 |
-| 50% | −$179 |
-| 90% | −$454 |
-
-**Break-even is a 24% chance of being caught.** Check this firm's terms directly — if cross-account
-hedging is prohibited there, the realistic row is the bottom one.
+Opposite positions across one person's accounts are prohibited by most futures prop firms and are
+easy to detect; the usual remedy is closing the accounts and voiding payouts. `--void` prices it:
+with the exit-together hedge (consistency on) break-even is a 24% chance of voiding. The user asked
+to set this aside for the numbers above, which all assume it never happens.
 
 ## 7. Bottom line
 
-- **8 accounts → 4 funded is impossible if the 8 are only hedged against each other**, not
-  unlikely: the ceiling is 3.56 at zero cost, and the simulated hedge gets 3 funded 63% of the time
-  and 2 the rest. Unhedged, 4+ happens 43% of the time — by luck, which is what hedging removes.
-- **2 payouts is about right; they are small.** ~2.6 payouts worth ~$690 in total for $522 in fees:
-  +$164 expected, a coin flip to finish ahead, before any ban risk. Not a max payout.
-- **Hedging is strictly worse than not hedging** on expected value at every group size tested. It
-  converts a lottery into a near-certain small number and pays for that in costs and trapped profit.
-- The only positive expectation here comes from the fee being small relative to the payout — which
-  an unhedged, zero-edge trader also collects, without the terms-of-service risk. A real edge is the
-  only thing that moves these numbers materially; see `STUDY_PROP_FIRM.md` for what one is worth.
-
-Re-run with the firm's real payout terms:
+- **Risking the whole $1,000 on every account is the best way to run the hedge.** Each pair produces
+  one pass 88.9% of the time, which is the theoretical ceiling; every other hedge wastes some of it.
+- **8 accounts → 4 funded: 60% if the consistency rule does not gate the pass, 22% if it does.**
+  Expected 3.53 / 2.88 funded. The 4th pass is paid by the market during the naked last $250, not by
+  the other accounts — in the closed, exit-together hedge 4 is out of reach.
+- **Payouts: ~2.3–2.9, worth ~$750–$900 to you for $522**, so +$230 to +$378 expected, a 50–69% chance
+  of finishing ahead — under the assumed payout rules, which §4 shows matter a great deal.
+- No hedge raises the *average*: unhedged zero-edge accounts pass at the same rate. Hedging trades
+  the lottery for a narrower range of outcomes. A real edge is the only thing that moves the mean.
 
 ```bash
-python research/propfirm_hedge.py --n 8 --payout-frac 1.0 --payout-cap 1500 --split 0.9 --void 0 0.25 0.5
-python research/propfirm_hedge.py --sweep
+python research/propfirm_hedge.py --n 8 --consistency 1.0     # all four plans, rule off
+python research/propfirm_hedge.py --sweep                     # N = 2..20, payout and cost grids
 ```
+
+## Correction
+
+The first version of this study scored the unhedged single-account trade as a 50/50 coin even when
+its target and stop differed (e.g. +$1,269 vs −$1,000), which is a hidden edge. It inflated the
+"independent" and "copy" baselines and the last unhedged leg of every hedge, and produced the claim
+that unhedged accounts beat the hedge on average. Solo legs now use the exact first-passage
+probability (stop / (stop + target)); every table above is from the corrected code.
 
 ## Caveats
 
-- **No market data.** A hedged pair's outcome does not depend on the market's path, only on which
-  side wins, so a fair coin is the right model. It ignores bust slippage past the threshold (costs
-  absorb it), and brackets that do not resolve by the close (at 31 NQ points this is rare).
-- Unhedged baselines use a fair coin: they assume no edge and no negative edge. A trader with worse
-  than zero edge does worse than that row; one with a real edge does better.
-- The payout rules in §0 marked as assumptions are guesses, and §4 shows they matter.
-- The funded scaling plan is not modelled; it only restricts size early, which a $19/day, 1-NQ
-  bracket already respects.
+- **No market data.** Only which side wins matters to a hedged pair, so a driftless price is the right
+  model. It ignores bust slippage past the threshold, NQ's drift (NQ rose 89% on this sample — which
+  side wins is not a fair coin in a trending month, though the pair does not care), and brackets that
+  do not resolve by the close. All-in's naked leg can need 50 more points at 1 NQ; most sessions cover
+  that, not all.
+- Unhedged baselines assume zero edge, not negative edge.
+- The payout rules marked as assumptions are guesses; §4 shows they matter.
+- The funded scaling plan is not modelled.

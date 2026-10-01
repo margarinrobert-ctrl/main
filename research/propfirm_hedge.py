@@ -140,7 +140,10 @@ def eval_want(a: Acct, r: EvalRules, step: float, cost: float) -> float:
     """Smallest market move that passes TODAY, net of cost, with consistency intact; else the step."""
     p, c = a.profit, r.consistency
     need = max(r.target - p, a.best_day / c - p)       # reach target AND best_day <= c x total
-    cap = p * c / (1 - c) if p > 0 else 0.0            # today's win must itself be <= c x total
+    if c >= 1:
+        cap = float("inf")                             # consistency rule switched off
+    else:
+        cap = p * c / (1 - c) if p > 0 else 0.0        # today's win must itself be <= c x total
     return need + cost if 0 < need <= cap else step
 
 
@@ -160,8 +163,42 @@ def trade_pair(a: Acct, b: Acct, d: float, cost: float, rng: random.Random) -> t
 
 
 def trade_solo(a: Acct, d: float, cost: float, rng: random.Random) -> float:
-    """Unhedged, zero edge: +d or -min(d, cushion) on a fair coin."""
-    return settle(a, d if rng.random() < 0.5 else -min(d, a.cushion), cost)
+    """Unhedged, zero edge: +d before -cushion. Not a fair coin when d != cushion: a driftless price
+    reaches +d first with probability cushion / (d + cushion), so the expected move is zero."""
+    return settle(a, walk_legs([(1, a.cushion, d)], rng)[0], cost)
+
+
+def walk_legs(legs: list[tuple[int, float, float]], rng: random.Random) -> list[float]:
+    """Each leg is (side, stop distance, target distance) on one shared driftless price, in dollars
+    of the same size. Each leg exits on its OWN barrier, so once one leg is out the other is naked.
+    Exact for a continuous martingale: from x, step to the nearest barrier above or below with
+    probability proportional to the distance to the other one (gambler's ruin)."""
+    x = 0.0
+    out: list[float | None] = [None] * len(legs)
+    while any(o is None for o in out):
+        lv = [(s * t, i) for i, (s, st, t) in enumerate(legs) if out[i] is None] + \
+             [(-s * st, i) for i, (s, st, t) in enumerate(legs) if out[i] is None]
+        up = min(v for v, _ in lv if v > x)
+        dn = max(v for v, _ in lv if v < x)
+        x = up if rng.random() < (x - dn) / (up - dn) else dn
+        for v, i in lv:
+            if v == x:
+                out[i] = legs[i][0] * x
+    return out
+
+
+def run_allin_day(pairs, solos, r: EvalRules, step: float, cost: float, rng: random.Random) -> float:
+    """Every leg risks its WHOLE cushion for the remaining target: A long and B short at the same
+    price, each with stop = its own threshold and target = what it still needs."""
+    spent = 0.0
+    for group in [list(p) for p in pairs] + [[a] for a in solos]:
+        legs = [(1 - 2 * (k % 2), a.cushion, eval_want(a, r, step, cost)) for k, a in enumerate(group)]
+        for a, mv in zip(group, walk_legs(legs, rng)):
+            pa = settle(a, mv, cost)
+            a.best_day = max(a.best_day, pa)
+            eval_check(a, r)
+            spent += cost
+    return spent
 
 
 def run_eval(n: int, r: EvalRules, pol: Policy, mode: str, rng: random.Random) -> dict:
@@ -184,6 +221,9 @@ def run_eval(n: int, r: EvalRules, pol: Policy, mode: str, rng: random.Random) -
             live.sort(key=lambda a: a.profit, reverse=True)
             pairs = [(live[i], live[i + 1]) for i in range(0, len(live) - 1, 2)]
             solos = []
+        if mode == "allin":
+            costs += run_allin_day(pairs, solos, r, step, pol.leg_cost, rng)
+            continue
         for a, b in pairs:
             d = min(eval_want(a, r, step, pol.leg_cost), eval_want(b, r, step, pol.leg_cost))
             pa, pb = trade_pair(a, b, d, pol.leg_cost, rng)
@@ -271,7 +311,7 @@ def simulate(n: int, mode: str, r: EvalRules, f: FundedRules, pol: Policy, runs:
     s = Summary(n, mode)
     for _ in range(runs):
         e = run_eval(n, r, pol, mode, rng)
-        fu = run_funded(e["passed"], f, pol, mode, rng)
+        fu = run_funded(e["passed"], f, pol, "hedge" if mode == "allin" else mode, rng)
         invested = n * r.fee + e["passed"] * f.activation_fee
         received = f.split * fu["gross"]
         s.passed.append(e["passed"])
@@ -306,7 +346,7 @@ def report(n, r, f, pol, runs, seed, void):
     print(f"\n{'mode':<12} {'E[funded]':>9} {'E[payouts]':>10} {'E[$ to you]':>11} {'E[net]':>8} "
           f"{'P(net>0)':>8} {'p5 net':>8} {'p95 net':>8} {'med days':>8}")
     out = {}
-    for mode in ("hedge", "independent", "copy"):
+    for mode in ("hedge", "allin", "independent", "copy"):
         s = simulate(n, mode, r, f, pol, runs, seed)
         out[mode] = s
         print(f"{mode:<12} {mean(s.passed):>9.2f} {mean(s.payouts):>10.2f} "
@@ -327,17 +367,17 @@ def report(n, r, f, pol, runs, seed, void):
 
 
 def sweep(r, f, pol, runs, seed):
-    print("\n=== hedge: accounts bought vs outcome (independent = same accounts, unhedged, zero edge) ===")
-    print(f"{'N':>3} {'invested':>9} {'bound':>6} {'E[funded]':>9} {'P(>=1)':>7} {'E[payouts]':>10} "
-          f"{'E[$ to you]':>11} {'E[net]':>8} {'P(net>0)':>8} | {'indep E[net]':>12} {'P(net>0)':>8}")
-    for n in (2, 4, 6, 8, 10, 12, 16, 20):
-        s = simulate(n, "hedge", r, f, pol, runs, seed)
-        i = simulate(n, "independent", r, f, pol, runs, seed)
+    print("\n=== accounts bought vs outcome: hedge (exit together), allin (each leg risks its whole"
+          " cushion), independent (unhedged, zero edge) ===")
+    print(f"{'N':>3} {'invested':>9} {'bound':>6} | {'E[funded]':>9} {'hedge':>6} {'allin':>6} {'indep':>6} | "
+          f"{'E[net]':>6} {'hedge':>6} {'allin':>6} {'indep':>6} | {'P(net>0)':>8} {'hedge':>6} {'allin':>6} {'indep':>6}")
+    for n in (2, 3, 4, 6, 8, 10, 12, 16, 20):
+        ss = [simulate(n, m, r, f, pol, runs, seed) for m in ("hedge", "allin", "independent")]
         pb, _ = bound(n, r, f)
-        print(f"{n:>3} {n * r.fee:>9,.0f} {pb:>6.2f} {mean(s.passed):>9.2f} "
-              f"{100 * mean(x >= 1 for x in s.passed):>6.1f}% {mean(s.payouts):>10.2f} "
-              f"{f.split * mean(s.gross):>11,.0f} {mean(s.net):>8,.0f} {100 * mean(x > 0 for x in s.net):>7.1f}%"
-              f" | {mean(i.net):>12,.0f} {100 * mean(x > 0 for x in i.net):>7.1f}%")
+        print(f"{n:>3} {n * r.fee:>9,.0f} {pb:>6.2f} | {'':>9} "
+              + " ".join(f"{mean(x.passed):>6.2f}" for x in ss) + f" | {'':>6} "
+              + " ".join(f"{mean(x.net):>6,.0f}" for x in ss) + f" | {'':>8} "
+              + " ".join(f"{100 * mean(v > 0 for v in x.net):>5.1f}%" for x in ss))
 
     print("\n=== hedge, N=8: sensitivity to the funded rules the screenshots do not state ===")
     print(f"{'payout cap':>10} {'frac':>5} {'split':>5} {'E[payouts]':>10} {'E[$ to you]':>11} {'E[net]':>8}")
@@ -369,6 +409,8 @@ def main():
     ap.add_argument("--eval-step", type=float, default=None)
     ap.add_argument("--funded-step", type=float, default=Policy.funded_step)
     ap.add_argument("--fee", type=float, default=EvalRules.fee)
+    ap.add_argument("--consistency", type=float, default=EvalRules.consistency,
+                    help="eval consistency rule; 1.0 switches it off")
     ap.add_argument("--payout-cap", type=float, default=FundedRules.payout_cap)
     ap.add_argument("--payout-frac", type=float, default=FundedRules.payout_frac)
     ap.add_argument("--split", type=float, default=FundedRules.split)
@@ -376,7 +418,7 @@ def main():
     ap.add_argument("--void", type=float, nargs="*", default=[0.0, 0.25, 0.5, 0.9])
     ap.add_argument("--sweep", action="store_true")
     a = ap.parse_args()
-    r = EvalRules(fee=a.fee)
+    r = EvalRules(fee=a.fee, consistency=a.consistency)
     f = FundedRules(payout_cap=a.payout_cap, payout_frac=a.payout_frac, split=a.split,
                     activation_fee=a.activation)
     pol = Policy(leg_cost=a.leg_cost, eval_step=a.eval_step, funded_step=a.funded_step)
