@@ -39,9 +39,21 @@ passes x $1,250  <=  busts x $1,000 - costs
 passes           <=  N x 1,000 / 2,250  =  0.444 N          (zero costs, perfect play)
 ```
 
-**8 accounts cannot produce 4 funded accounts.** The ceiling is 3.56 with zero costs; four passes
-need $5,000 of gains, and the other four accounts only hold $4,000 of drawdown between them. The
-same identity caps the funded phase: every dollar withdrawn was lost by another funded account, so
+**8 accounts hedged only against each other cannot produce 4 funded accounts.** The ceiling is
+3.56 with zero costs; four passes need $5,000 of gains, and the other four accounts only hold
+$4,000 of drawdown between them. This is a statement about the *closed* group, and it rests on two
+things worth checking with the firm:
+
+- **The threshold is enforced in real time.** "EOD" here means the threshold is *recalculated* at
+  the close; if the firm only *checks* it at the close, a loser can sit $2,000 under water intraday
+  and hand its partner $2,000, and the ceiling no longer holds.
+- **Nothing outside the group pays.** Unhedged accounts are paid by the market, so 4 of 8 is
+  possible — the same 8 accounts traded independently with zero edge get 4+ funded in **42.9%** of
+  runs (copy-traded, 41.4%, but 0 funded in 58.6%). The ceiling still holds *on average* — a
+  zero-edge account is a martingale — but not in any one run. Hedging is exactly what removes that
+  upside: hedged, 4+ funded happens in 0.0% of runs.
+
+The same identity caps the funded phase: every dollar withdrawn was lost by another funded account, so
 
 ```
 gross withdrawn  <=  funded accounts x $1,000 - costs       (3 funded -> <= $2,700 to you at 90%)
@@ -161,8 +173,9 @@ hedging is prohibited there, the realistic row is the bottom one.
 
 ## 7. Bottom line
 
-- **8 accounts → 4 funded is impossible under the rules**, not unlikely. The ceiling is 3.56 at zero
-  cost; the simulated hedge gets 3 funded 63% of the time and 2 the rest.
+- **8 accounts → 4 funded is impossible if the 8 are only hedged against each other**, not
+  unlikely: the ceiling is 3.56 at zero cost, and the simulated hedge gets 3 funded 63% of the time
+  and 2 the rest. Unhedged, 4+ happens 43% of the time — by luck, which is what hedging removes.
 - **2 payouts is about right; they are small.** ~2.6 payouts worth ~$690 in total for $522 in fees:
   +$164 expected, a coin flip to finish ahead, before any ban risk. Not a max payout.
 - **Hedging is strictly worse than not hedging** on expected value at every group size tested. It
