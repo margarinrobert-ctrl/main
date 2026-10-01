@@ -34,6 +34,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import math
 import random
 from dataclasses import dataclass, field, replace
 from statistics import mean
@@ -75,8 +76,8 @@ class FundedRules:
 class Policy:
     leg_cost: float = 19.0          # round turn per account per day: 1 NQ, $4 commission + 1 tick
                                     # spread + 1 tick slippage, the repo's standard figure
-    eval_step: float | None = None  # winning-day size in the eval; None = consistency x target
-    funded_step: float = 250        # winning-day size in funded
+    eval_step: float | None = None  # NET winning day in the eval; None = consistency x target
+    funded_step: float = 250        # bracket in funded, as a market move (a win nets this - cost)
     max_eval_days: int = 250
     max_funded_days: int = 250
 
@@ -137,14 +138,16 @@ def settle(a: Acct, move: float, cost: float) -> float:
 
 
 def eval_want(a: Acct, r: EvalRules, step: float, cost: float) -> float:
-    """Smallest market move that passes TODAY, net of cost, with consistency intact; else the step."""
+    """Market move for today's winning target: the smallest one that passes TODAY with consistency
+    intact if there is one, else `step`. Both are NET day P&L; the cost is added on top so a
+    winning day books exactly that amount."""
     p, c = a.profit, r.consistency
     need = max(r.target - p, a.best_day / c - p)       # reach target AND best_day <= c x total
     if c >= 1:
         cap = float("inf")                             # consistency rule switched off
     else:
         cap = p * c / (1 - c) if p > 0 else 0.0        # today's win must itself be <= c x total
-    return need + cost if 0 < need <= cap else step
+    return (need if 0 < need <= cap + 1e-9 else step) + cost
 
 
 def eval_check(a: Acct, r: EvalRules) -> None:
@@ -153,13 +156,15 @@ def eval_check(a: Acct, r: EvalRules) -> None:
 
 
 def trade_pair(a: Acct, b: Acct, d: float, cost: float, rng: random.Random) -> tuple[float, float]:
-    """A long, B short (which is which does not matter: the coin decides the winner). The pair
-    exits together when the winner makes `d` or the loser touches its threshold, so the winner
-    only ever banks what the loser actually gave up and neither leg is left naked."""
-    w, l = (a, b) if rng.random() < 0.5 else (b, a)
-    m = min(d, l.cushion)
-    pw, pl = settle(w, m, cost), settle(l, -m, cost)
-    return (pw, pl) if w is a else (pl, pw)
+    """A long, B short. The pair exits together when price has moved `d` or either side touches
+    its threshold, whichever is nearer, so the winner only ever banks what the loser gave up and
+    neither leg is left naked. The two barriers are NOT symmetric when the cushions differ:
+    up = min(d, B's cushion), down = min(d, A's cushion), and a driftless price reaches the up
+    barrier first with probability down / (up + down) -- not 1/2, which would hand the weaker
+    account a free edge."""
+    up, dn = min(d, b.cushion), min(d, a.cushion)
+    m = up if rng.random() < dn / (up + dn) else -dn     # A's move; B's is the negative
+    return settle(a, m, cost), settle(b, -m, cost)
 
 
 def trade_solo(a: Acct, d: float, cost: float, rng: random.Random) -> float:
@@ -353,9 +358,15 @@ def report(n, r, f, pol, runs, seed, void):
               f"{f.split * mean(s.gross):>11,.0f} {mean(s.net):>8,.0f} "
               f"{100 * mean(x > 0 for x in s.net):>7.1f}% {q(s.net, .05):>8,.0f} {q(s.net, .95):>8,.0f} "
               f"{q(s.days, .5):>8}")
+    print(f"\nfunded accounts out of {n}:")
+    for mode, s in out.items():
+        print(f"  {mode:<12} {dist(s.passed, 0, n)}")
+    print("number of payouts:")
+    for mode, s in out.items():
+        print(f"  {mode:<12} {dist(s.payouts, 0, min(max(s.payouts), 8))}")
+    se = max(math.sqrt(sum((x - mean(s.net)) ** 2 for x in s.net) / runs) for s in out.values()) / math.sqrt(runs)
+    print(f"Monte Carlo standard error: E[net] <= ${se:,.0f}, probabilities <= {50 / math.sqrt(runs):.1f} pts")
     h = out["hedge"]
-    print(f"\nhedge, funded accounts out of {n}:  {dist(h.passed, 0, n)}")
-    print(f"hedge, number of payouts:          {dist(h.payouts, 0, min(max(h.payouts), 12))}")
     er = f.split * mean(h.gross)
     inv = n * r.fee
     print(f"\nif the firm voids hedged payouts with probability p:  E[net] = (1-p) x ${er:,.0f} - ${inv:,.0f}")
