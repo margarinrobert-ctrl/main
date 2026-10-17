@@ -1,0 +1,6 @@
+cluster,n,modes,W_range,med_sharpe,med_P_ruin
+1,2,L/S contrarian/long-only contra,1-1,0.63,5.58
+2,58,L/S contrarian/long-only contra,2-30,0.62,2.48
+3,21,L/S momentum,10-30,-0.53,93.0
+4,8,L/S momentum,2-9,-0.66,97.38
+5,1,L/S momentum,1-1,-0.92,99.65

@@ -1,0 +1,324 @@
+//@version=6
+// ============================================================================
+// COMMISSION NOTE: commission_value below is set for MICRO futures (MNQ),
+// ~$0.62 per contract per side. If you run full-size NQ, change it to 2.25.
+// TradingView requires these to be literal constants, so they cannot be inputs.
+// ============================================================================
+strategy("Semivariance Contrarian — Futures (SSRN 2815151)", shorttitle="SAM-Fut",
+     overlay=true,
+     initial_capital=100000,
+     default_qty_type=strategy.fixed,
+     commission_type=strategy.commission.cash_per_contract,
+     commission_value=0.62,
+     slippage=1,
+     margin_long=6,
+     margin_short=6,
+     process_orders_on_close=true,
+     calc_on_every_tick=false,
+     max_bars_back=500)
+
+// ============================================================================
+// Futures build of the semivariance-asymmetry strategy
+// ============================================================================
+// Signal (Barunik, Kocenda & Vacha, SSRN 2815151): daily realized variance from
+// 30m returns splits into bad volatility RS- (down moves) and good volatility
+// RS+ (up moves). Go LONG when bad volatility dominated the last W days
+// (rolling SAM < 0), flat otherwise. Long only - the short side has negative
+// expectancy in every variant tested.
+//
+// WHY THIS FILE EXISTS - the CFD versions show no trades on a futures symbol.
+// They size positions as `equity / close`, which is a count of INDEX UNITS. On
+// a futures symbol TradingView reads that number as CONTRACTS, and one contract
+// is worth close * pointvalue, not close. At NAS100 = 24,000 on a $100k account:
+//
+//   equity/close            = 4.17 "units"
+//   4.17 NQ contracts       = $2,000,000 notional = 20x equity  -> MARGIN REJECT
+//
+// Every order is silently rejected, so the Strategy Tester stays empty and the
+// chart shows nothing. This build sizes in real contracts:
+//
+//   contracts = floor(equity * size% * signal / (close * syminfo.pointvalue))
+//
+// and prints a diagnostics panel that names the blocking reason whenever it
+// cannot trade, so a blank chart is never a silent failure again.
+//
+// ---------------------------------------------------------------------------
+// DEFAULT IS THE BINARY W=8 SIGNAL, NOT THE ENSEMBLE - here is why.
+// You cannot hold 0.58 of a contract. The plateau ensemble's edge IS its graded
+// position, so rounding it to whole contracts destroys it on small accounts,
+// while the binary W=8 signal (0 or full size) is immune to rounding.
+// Measured in backtests/nas100_semivariance/futures_granularity.py:
+//
+//   max contracts at full size :   1     2     3     5    frac(CFD)
+//   ensemble W2-30 Sharpe      : 0.45  0.69  0.73  0.84   0.83
+//   single W=8 Sharpe          : 1.02  1.02  1.02  1.02   1.02
+//
+// The ensemble only becomes itself again at >= 5 contracts, which needs about
+// $240k on MNQ or $2.4M on NQ. Below that, use the binary signal.
+//
+// SYMBOL GUIDE (index near 24,000):
+//   MNQ1! micro, $2/pt  -> $48,000 per contract. $100k = 2 contracts at 1x.
+//   NQ1!  e-mini, $20/pt -> $480,000 per contract. Needs ~$480k for ONE.
+// Most accounts should run MNQ1!. On NQ1! with $100k the panel will correctly
+// report that a 1x position is not fundable.
+//
+// Backtested record of the signal (NAS100 30m, Nov 2016 - Sep 2025, net of
+// 2 bps/side): W=8 long-only Sharpe 1.02, CAGR 20.5%, maxDD -23.3%, t 3.07,
+// ex-COVID Sharpe 0.91, OOS>=2022 0.60. W=8 was picked on the full sample, so
+// treat the headline as optimistic; the signal direction is robust for every
+// W 1-30, but never re-tune W to recent results (walk-forward: that collapses
+// OOS Sharpe to 0.19).
+//
+// USE ON A 30-MINUTE CHART. Evaluated once per day on the first bar of the new
+// session, filled at that bar's close.
+//
+// CHART SESSION: prefer the FULL session (electronic / "extended hours" ON).
+// The research data was a near-24-hour NAS100 series, so a full futures
+// session (~46 bars) reproduces its semivariances closely. A regular-hours
+// chart (~13 bars) still runs — the auto bar-count threshold adapts — but it
+// measures a different, thinner slice of the day than the parameters were
+// validated on, so treat RTH results as a separate experiment.
+
+// ============================================================================
+// Inputs
+// ============================================================================
+gSig = "Signal"
+sigMode = input.string("Single window (binary — best for futures)", "Signal mode",
+     options=["Single window (binary — best for futures)", "Plateau ensemble W 2-30 (needs 5+ contracts)"],
+     group=gSig,
+     tooltip="Binary: full size when the W-day SAM is negative, else flat."
+       + " Immune to whole-contract rounding, so it holds its full backtested"
+       + " Sharpe on any account size. Ensemble: graded position = share of"
+       + " windows W 2..30 that are negative; more robust on a fractional"
+       + " instrument, but rounding to whole contracts cuts its Sharpe from"
+       + " 0.83 to 0.45 when the account only affords 1 contract.")
+W       = input.int(8, "SAM window (days)", minval=1, maxval=60, group=gSig,
+     tooltip="Sharpe is positive for every W 1-30 and plateaus at W 4-13; 8 is"
+       + " the plateau peak. Do NOT re-tune to recent performance.")
+wMin    = input.int(2,  "Ensemble smallest window", minval=1,  maxval=10, group=gSig)
+wMax    = input.int(30, "Ensemble largest window",  minval=10, maxval=60, group=gSig)
+
+gSess = "Session handling"
+manualMinBars = input.int(0, "Min 30m bars for a valid day (0 = auto)", minval=0,
+     group=gSess,
+     tooltip="A day is only used if it has enough 30m bars for a reliable"
+       + " semivariance. AUTO learns your chart's session length and requires"
+       + " 60% of the median bar count, which is why this build works on both"
+       + " a full 23-hour futures session (~46 bars) and a regular-hours chart"
+       + " (~13 bars). The old fixed threshold of 20 rejected EVERY day on an"
+       + " RTH chart, which was a second cause of an empty backtest.")
+
+gSize = "Position sizing"
+sizePct = input.float(100, "Target notional (% of equity)", minval=1, maxval=300,
+     step=5, group=gSize,
+     tooltip="100 = position notional equals account equity (1x). Notional is"
+       + " contracts * price * point value, so this is real leverage, not a"
+       + " contract count. Above 100 scales return and ruin risk together"
+       + " without improving Sharpe: at 2x, Monte Carlo puts the chance of a"
+       + " 50% account drawdown at 14.8% versus 0.01% at 1x.")
+hardCap = input.int(0, "Hard cap on contracts (0 = no cap)", minval=0, group=gSize,
+     tooltip="Absolute ceiling on position size, applied after the notional"
+       + " calculation. Useful as a hard risk stop on a funded account.")
+allowUnderfunded = input.bool(false, "Trade 1 contract even if underfunded",
+     group=gSize,
+     tooltip="OFF (recommended): if the account cannot fund a single contract"
+       + " at your target notional, the strategy stays flat and the panel says"
+       + " so. ON: it trades 1 contract anyway — on NQ1! with $100k that is"
+       + " roughly 5x leverage. Read the panel's leverage line before enabling.")
+
+gViz = "Display"
+showDiag = input.bool(true, "Show diagnostics panel", group=gViz,
+     tooltip="Reports exactly why the strategy is or is not in a position —"
+       + " warm-up progress, session detection, contract budget and leverage.")
+showTint = input.bool(true, "Tint background by signal", group=gViz)
+
+// ============================================================================
+// Daily semivariance accumulation on 30m bars
+// ============================================================================
+var float rsPosDay = 0.0   // running RS+ for the current day
+var float rsNegDay = 0.0   // running RS- for the current day
+var int   dayBars  = 0
+
+ensembleMode = sigMode == "Plateau ensemble W 2-30 (needs 5+ contracts)"
+histCap      = math.max(wMax, W)
+
+// completed-day history, newest last
+var array<float> rsPosHist = array.new_float()
+var array<float> rsNegHist = array.new_float()
+// recent per-day bar counts, used to learn the session length
+var array<int>   barCounts = array.new_int()
+
+newDay = ta.change(time("D")) != 0
+
+// first bar of a day is open->close, so neither the overnight gap nor a
+// futures contract rollover gap can enter the semivariances
+r = newDay ? math.log(close / open) : math.log(close / close[1])
+
+var float samValue = na    // rolling SAM for the single window (display)
+var float strength = na    // ensemble vote share 0..1
+var int   sig      = 0     // binary signal 0/1
+var bool  ready    = false
+var int   minBarsUsed = 0
+var int   daysKept = 0
+
+if newDay
+    // learn the session: require 60% of the median recent day once we have
+    // a few days to compare against, otherwise accept anything non-trivial
+    autoThresh = array.size(barCounts) >= 3 ?
+         math.max(3, int(math.round(0.6 * array.median(barCounts)))) : 3
+    minBarsUsed := manualMinBars > 0 ? manualMinBars : autoThresh
+
+    // finalize YESTERDAY: only sessions with enough bars count
+    if dayBars >= minBarsUsed
+        array.push(rsPosHist, rsPosDay)
+        array.push(rsNegHist, rsNegDay)
+        daysKept += 1
+        if array.size(rsPosHist) > histCap
+            array.shift(rsPosHist)
+            array.shift(rsNegHist)
+    if dayBars > 0
+        array.push(barCounts, dayBars)
+        if array.size(barCounts) > 20
+            array.shift(barCounts)
+
+    // one backward pass builds every rolling SAM window at once
+    if array.size(rsPosHist) == histCap
+        votes  = 0
+        sumPos = 0.0
+        sumNeg = 0.0
+        last   = array.size(rsPosHist) - 1
+        for w = 1 to histCap
+            sumPos += array.get(rsPosHist, last - w + 1)
+            sumNeg += array.get(rsNegHist, last - w + 1)
+            if w >= wMin and w <= wMax and sumPos - sumNeg < 0
+                votes += 1
+            if w == W
+                samValue := sumPos - sumNeg
+        strength := votes / float(wMax - wMin + 1)
+        sig      := samValue < 0 ? 1 : 0
+        ready    := true
+
+    // reset accumulators for the new day
+    rsPosDay := 0.0
+    rsNegDay := 0.0
+    dayBars  := 0
+
+// accumulate this bar into the current day
+if not na(r)
+    rsPosDay += r > 0 ? r * r : 0.0
+    rsNegDay += r < 0 ? r * r : 0.0
+    dayBars  += 1
+
+// ============================================================================
+// Contract sizing — the part the CFD versions get wrong
+// ============================================================================
+pointValue      = syminfo.pointvalue
+notionalPerCt   = close * pointValue
+// whole contracts only — a futures position cannot be fractional
+fullBudgetCt    = notionalPerCt > 0 ?
+     int(math.floor(strategy.equity * (sizePct / 100) / notionalPerCt)) : 0
+if hardCap > 0
+    fullBudgetCt := math.min(fullBudgetCt, hardCap)
+
+// today's requested fraction of full size
+signalFrac = not ready ? 0.0 : ensembleMode ? strength : float(sig)
+
+targetCt = int(math.floor(fullBudgetCt * signalFrac))
+// underfunded rescue: signal is on but the budget rounds to zero contracts
+underfunded = ready and signalFrac > 0 and fullBudgetCt < 1
+if underfunded and allowUnderfunded
+    targetCt := 1
+
+// ============================================================================
+// Orders — once per day, on the first bar of the new session
+// ============================================================================
+if newDay and ready
+    delta = targetCt - strategy.position_size
+    if targetCt <= 0 and strategy.position_size > 0
+        strategy.close_all("flat day")
+    else if delta >= 1
+        strategy.order("Add", strategy.long, qty=delta)
+    else if delta <= -1
+        strategy.order("Trim", strategy.short, qty=-delta)
+
+// ============================================================================
+// Diagnostics — so an empty backtest always explains itself
+// ============================================================================
+notFutures  = syminfo.type != "futures"
+wrongTF     = timeframe.in_seconds() != 1800
+daysNeeded  = histCap
+posNotional = math.abs(strategy.position_size) * notionalPerCt
+leverage    = strategy.equity > 0 ? posNotional / strategy.equity : 0.0
+
+statusTxt = wrongTF ? "⚠ NOT A 30-MINUTE CHART — switch the timeframe to 30m" :
+     notFutures ? "⚠ Not a futures symbol — point value may be 1 (use the CFD build)" :
+     not ready ? "Warming up — need " + str.tostring(daysNeeded) + " complete days" :
+     underfunded and not allowUnderfunded ?
+         "⚠ Underfunded: 1 contract > target notional. Use MNQ1! or raise equity" :
+     targetCt > 0 ? "In position — " + str.tostring(targetCt) + " contract(s)" :
+     "Flat — good volatility dominated"
+
+statusCol = wrongTF or notFutures or (underfunded and not allowUnderfunded) ?
+     color.new(color.red, 0) :
+     not ready ? color.new(color.orange, 0) : color.new(color.teal, 0)
+
+var table diag = table.new(position.top_right, 2, 11,
+     border_width=1, border_color=color.new(color.gray, 70),
+     bgcolor=color.new(color.black, 15), frame_width=1,
+     frame_color=color.new(color.gray, 60))
+
+row(int i, string k, string v, color c) =>
+    table.cell(diag, 0, i, k, text_size=size.tiny, text_halign=text.align_left,
+         text_color=color.new(color.gray, 20))
+    table.cell(diag, 1, i, v, text_size=size.tiny, text_halign=text.align_right,
+         text_color=c)
+
+if barstate.islast and showDiag
+    white = color.new(color.white, 0)
+    row(0, "STATUS", statusTxt, statusCol)
+    row(1, "Symbol / point value",
+         syminfo.ticker + "  $" + str.tostring(pointValue, "#.##") + "/pt", white)
+    row(2, "Notional per contract", "$" + str.tostring(notionalPerCt, "#,###"), white)
+    row(3, "Contract budget at " + str.tostring(sizePct, "#") + "%",
+         str.tostring(fullBudgetCt) + " contract(s)",
+         fullBudgetCt < 1 ? color.new(color.red, 0) :
+         fullBudgetCt < 5 and ensembleMode ? color.new(color.orange, 0) : white)
+    row(4, "Complete days collected",
+         str.tostring(math.min(daysKept, daysNeeded)) + " / " + str.tostring(daysNeeded),
+         ready ? white : color.new(color.orange, 0))
+    row(5, "Session bars (median / min)",
+         (array.size(barCounts) > 0 ? str.tostring(array.median(barCounts), "#") : "—")
+           + " / " + str.tostring(minBarsUsed), white)
+    row(6, "Bars in current session", str.tostring(dayBars), white)
+    row(7, "SAM (W=" + str.tostring(W) + ")",
+         na(samValue) ? "—" : str.tostring(samValue, "#.########"),
+         na(samValue) ? white : samValue < 0 ? color.new(color.teal, 0) :
+         color.new(color.orange, 0))
+    row(8, ensembleMode ? "Ensemble vote" : "Signal",
+         not ready ? "—" : ensembleMode ? str.tostring(strength * 100, "#") + "% long" :
+         sig == 1 ? "LONG" : "FLAT", white)
+    row(9, "Position", str.tostring(strategy.position_size, "#") + " contract(s)", white)
+    row(10, "Leverage on equity", str.tostring(leverage, "#.##") + "x",
+         leverage > 2.5 ? color.new(color.red, 0) :
+         leverage > 1.5 ? color.new(color.orange, 0) : white)
+
+// hard-to-miss warning if the script cannot possibly trade as configured
+// (kept as a single label so realtime ticks don't stack duplicates)
+var label warnLbl = na
+label.delete(warnLbl)
+if barstate.islast and (wrongTF or (underfunded and not allowUnderfunded))
+    warnLbl := label.new(bar_index, high, statusTxt, style=label.style_label_down,
+         color=color.new(color.red, 10), textcolor=color.white, size=size.small)
+
+// ============================================================================
+// Display
+// ============================================================================
+dispStrength = not ready ? na : ensembleMode ? strength : float(sig)
+bgcolor(showTint and not na(dispStrength) and dispStrength > 0 ?
+     color.new(color.teal, int(95 - 20 * dispStrength)) : na,
+     title="Bad-volatility regime (long signal)")
+
+plotchar(newDay and ready and dispStrength > 0.99, "Full long", "▲",
+     location.belowbar, color.new(color.teal, 0), size=size.tiny)
+plotchar(newDay and ready and dispStrength < 0.001 and nz(dispStrength[1]) >= 0.001,
+     "Gone flat", "•", location.abovebar, color.new(color.orange, 0), size=size.tiny)

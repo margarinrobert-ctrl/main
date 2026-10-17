@@ -1,0 +1,7 @@
+,OOS_sharpe,avg_IS_sharpe,WF_efficiency,OOS_total_%,OOS_maxdd_%
+A greedy best-of-90,0.19,1.18,0.16,28.0,-45.9
+B plateau ensemble,0.79,0.84,0.94,138.0,-24.9
+C smoothed selection,0.7,0.97,0.72,132.0,-26.3
+D top-5 ensemble,0.43,1.24,0.35,63.0,-30.6
+E fixed W=8,0.98,1.01,0.98,229.0,-23.3
+buy & hold,0.73,,,207.0,-35.6

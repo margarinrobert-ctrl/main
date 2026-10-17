@@ -1,0 +1,163 @@
+//@version=6
+strategy("Semivariance Contrarian — Max Performance (SSRN 2815151)", shorttitle="SAM-Max",
+     overlay=true,
+     initial_capital=100000,
+     commission_type=strategy.commission.percent,
+     commission_value=0.02,
+     margin_long=10,
+     margin_short=10,
+     process_orders_on_close=true,
+     calc_on_every_tick=false,
+     max_bars_back=500)
+
+// ============================================================
+// The maximum-performance configuration from the robustness study
+// ============================================================
+// Signal (Barunik, Kocenda & Vacha, SSRN 2815151): daily realized variance
+// from 30m returns splits into bad volatility RS- (down moves) and good
+// volatility RS+ (up moves). Go LONG when bad volatility dominated the last
+// W days (rolling SAM < 0), flat otherwise. Long only: the short side has
+// negative expectancy in every variant tested.
+//
+// This file is the best PERFORMER from the study in
+// backtests/nas100_semivariance/ (2,278 NAS100 trading days, Nov 2016 -
+// Sep 2025, net of 2 bps/side): single window W=8, the peak of the W 4-13
+// plateau. Know what you are choosing between this and the ensemble file:
+//
+//   W=8 single (this file) : Sharpe 1.02, CAGR 20.5%, maxDD -23.3%,
+//                            t 3.07, ex-COVID Sharpe 0.91, OOS>=2022 0.60.
+//                            Caveat: W=8 was picked on the full sample, so
+//                            these numbers carry selection bias.
+//   plateau ensemble       : Sharpe 0.83, CAGR 15.1% - lower headline, but
+//     (...Best.pine)         the only version that passed walk-forward with
+//                            nothing fitted (efficiency 0.94 vs 0.16 for
+//                            re-picking W). The honest expectation.
+//
+// Performance/risk ladder at W=8 (10,000-path Monte Carlo, ruin = -50%
+// account drawdown at any point):
+//   fixed sizing @100%     : CAGR 21.0%, maxDD -17.5%, P(ruin) 0.01%  <- default
+//   split 1/3 @200%        : CAGR 23.8%, maxDD -22.2%, P(ruin) 1.3%
+//   fixed sizing @200%     : CAGR 45.2%, maxDD -41.2%, P(ruin) 14.8%
+// Leverage adds zero Sharpe - it only scales return AND ruin risk together.
+// Martingale sizing is excluded: P(ruin) 24-47% (martingale_analysis.py).
+//
+// USE ON A 30-MINUTE NAS100 CHART. The signal is evaluated once per day on
+// the first bar of the new session and fills at that bar's close.
+
+// ============================================================
+// Inputs
+// ============================================================
+gSig = "Signal"
+W       = input.int(8, "SAM window (days)", minval=1, maxval=60, group=gSig,
+     tooltip="Sharpe is positive for every W 1-30 and plateaus at W 4-13; 8 is"
+       + " the plateau peak (Sharpe 1.02). Do NOT re-tune this to recent"
+       + " performance - walk-forward shows that collapses the edge to almost"
+       + " nothing (OOS Sharpe 0.19).")
+minBars = input.int(20, "Min 30m bars for a valid day", minval=1, group=gSig,
+     tooltip="Holiday/stub sessions with fewer bars are skipped, matching the backtest")
+
+gSize = "Position sizing"
+sizing  = input.string("Fixed", "Sizing mode", group=gSize,
+     options=["Fixed", "Split entry 1/3 avg-down"],
+     tooltip="Fixed: full size on the signal day. Split entry: open 1/3 of full"
+       + " size, add 1/3 at the start of each day the trade is underwater (max"
+       + " 3 tranches) - smoother drawdowns, slightly lower CAGR per unit of"
+       + " full size, and the only scheme whose ruin probability stays near"
+       + " zero even at 200% full size.")
+fullPct = input.float(100, "Full position size (% of equity)", minval=1,
+     maxval=200, step=5, group=gSize,
+     tooltip="100 = at most 1x equity: CAGR 21%, P(50% drawdown) 0.01%."
+       + " 200 with Fixed sizing doubles CAGR to ~45% but Monte Carlo puts"
+       + " the chance of a 50% account drawdown at 14.8% - that is roughly"
+       + " one in seven alternate histories. 200 with Split entry lands at"
+       + " CAGR ~24%, P(ruin) 1.3%. Choose with eyes open.")
+
+gViz = "Display"
+showSam = input.bool(true, "Background tint by SAM sign", group=gViz)
+
+// ============================================================
+// Daily semivariance accumulation on 30m bars
+// ============================================================
+var float rsPosDay = 0.0   // running RS+ for the current day
+var float rsNegDay = 0.0   // running RS- for the current day
+var int   dayBars  = 0
+
+// completed-day history for the rolling W-day window
+var array<float> rsPosHist = array.new_float()
+var array<float> rsNegHist = array.new_float()
+
+newDay = ta.change(time("D")) != 0
+
+// first bar of a day is open->close so the overnight gap never enters RS
+r = newDay ? math.log(close / open) : math.log(close / close[1])
+
+splitMode = sizing == "Split entry 1/3 avg-down"
+
+var int   sig      = 0     // 1 = long today, 0 = flat
+var bool  ready    = false
+var int   tranches = 0     // split-entry tranches currently scaled in (0..3)
+var float samValue = na    // last computed rolling SAM (for plotting)
+
+if newDay
+    // finalize YESTERDAY: only complete sessions count
+    if dayBars >= minBars
+        array.push(rsPosHist, rsPosDay)
+        array.push(rsNegHist, rsNegDay)
+        if array.size(rsPosHist) > W
+            array.shift(rsPosHist)
+            array.shift(rsNegHist)
+    // rolling SAM over the last W complete days
+    if array.size(rsPosHist) == W
+        samValue := array.sum(rsPosHist) - array.sum(rsNegHist)
+        sig := samValue < 0 ? 1 : 0
+        ready := true
+    // reset accumulators for the new day
+    rsPosDay := 0.0
+    rsNegDay := 0.0
+    dayBars  := 0
+
+// accumulate this bar into the current day
+if not na(r)
+    rsPosDay += r > 0 ? r * r : 0.0
+    rsNegDay += r < 0 ? r * r : 0.0
+    dayBars  += 1
+
+// ============================================================
+// Orders — once per day, on the first bar of the new day
+// ============================================================
+underwater = strategy.position_size > 0 and close < strategy.position_avg_price
+
+if newDay and ready
+    // target fraction of full size for today
+    float frac = 0.0
+    if sig == 0
+        tranches := 0
+    else
+        if tranches == 0
+            tranches := splitMode ? 1 : 3
+        else if splitMode and underwater and tranches < 3
+            tranches += 1
+        frac := tranches / 3.0
+
+    fullQty   = strategy.equity * (fullPct / 100) / close
+    targetQty = fullQty * frac
+    deltaQty  = targetQty - strategy.position_size
+    if frac < 0.001 and strategy.position_size > 0
+        strategy.close_all("flat day")
+    else if math.abs(deltaQty) >= fullQty * 0.05
+        if deltaQty > 0
+            strategy.order("Add", strategy.long, qty=deltaQty)
+        else
+            strategy.order("Trim", strategy.short, qty=-deltaQty)
+
+// ============================================================
+// Display
+// ============================================================
+bgcolor(showSam and not na(samValue) ?
+     (samValue < 0 ? color.new(color.teal, 92) : color.new(color.orange, 94)) : na,
+     title="SAM regime (teal = bad vol dominated = long signal)")
+
+plotchar(newDay and ready and sig == 1, "Long signal", "▲", location.belowbar,
+     color.new(color.teal, 0), size=size.tiny)
+plotchar(newDay and ready and sig == 0 and nz(sig[1]) == 1, "Gone flat", "•",
+     location.abovebar, color.new(color.orange, 0), size=size.tiny)
