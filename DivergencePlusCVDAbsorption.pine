@@ -39,7 +39,8 @@ calcext    = input.bool(false,"Check External Indicator", group=gInd)
 externalindi = input.source(close, "External Indicator", group=gInd)
 
 gCVD = "CVD Settings"
-cvdReset = input.string("Session", "CVD Reset", options=["Session","Day","Week","None"], group=gCVD)
+cvdReset   = input.string("Session", "CVD Reset", options=["Session","Day","Week","NY RTH (9:30-16:00 ET)","None"], group=gCVD)
+cvdLowerTf = input.string("1", "CVD Lower Timeframe (accuracy)", options=["1S","5S","15S","30S","1","3","5"], group=gCVD, tooltip="Lower timeframe used to classify volume as up or down for accurate CVD. Lower = more accurate but less history. '1S' requires paid plan with 1s data.")
 
 gCol = "Colors / Lines"
 pos_reg_div_col = input.color(color.yellow, "Positive Regular Divergence", group=gCol)
@@ -59,17 +60,19 @@ cma1col = input.color(color.lime, "", inline="ma12", group=gMA)
 cma2col = input.color(color.red,  "", inline="ma12", group=gMA)
 
 gPanel = "On-Chart Value Panel"
-showPanel  = input.bool(true, "Show RSI / Stoch / CVD values", group=gPanel)
+showPanel  = input.bool(true, "Show RSI / Stoch / CCI / CVD values", group=gPanel)
 panelPos   = input.string("top_right", "Panel Position", options=["top_left","top_right","top_center","middle_left","middle_right","bottom_left","bottom_right"], group=gPanel)
 panelSize  = input.string("normal", "Text Size", options=["tiny","small","normal","large","huge"], group=gPanel)
 rsiOBlvl   = input.int(70, "RSI OB level", group=gPanel)
 rsiOSlvl   = input.int(30, "RSI OS level", group=gPanel)
 stOBlvl    = input.int(80, "Stoch OB level", group=gPanel)
 stOSlvl    = input.int(20, "Stoch OS level", group=gPanel)
+cciOBlvl   = input.int(100,  "CCI OB level", group=gPanel)
+cciOSlvl   = input.int(-100, "CCI OS level", group=gPanel)
 
 gOBOS = "OB/OS Bar Markers"
 showObOsMarks = input.bool(true, "Show OB/OS Triangles on Bars", group=gOBOS)
-markMode      = input.string("Both RSI and Stoch", "Trigger When", options=["Either RSI or Stoch","Both RSI and Stoch","RSI only","Stoch only"], group=gOBOS)
+markMode      = input.string("All 3 (RSI, Stoch, CCI)", "Trigger When", options=["Any of RSI/Stoch/CCI","All 3 (RSI, Stoch, CCI)","2 of 3 (RSI/Stoch/CCI)","Both RSI and Stoch","RSI only","Stoch only","CCI only"], group=gOBOS)
 osColor       = input.color(color.new(color.lime, 0), "OS (buy) Triangle Color",  group=gOBOS)
 obColor       = input.color(color.new(color.red,  0), "OB (sell) Triangle Color", group=gOBOS)
 
@@ -118,12 +121,28 @@ cmf    = ta.sma(Cmfv, 21) / ta.sma(volume, 21)
 Mfi    = ta.mfi(close, 14)
 
 // --- CVD ---
-isNewCvdPeriod = cvdReset == "Session" ? ta.change(time("D")) != 0 :
-                 cvdReset == "Day"     ? ta.change(time("D")) != 0 :
-                 cvdReset == "Week"    ? ta.change(time("W")) != 0 :
+// Accurate volume delta via lower-timeframe up/down volume classification.
+// Tick-rule: close>open => +volume, close<open => -volume, equal => previous direction.
+f_barDelta() =>
+    var float lastDir = 1.0
+    dir = close > open ? 1.0 : close < open ? -1.0 : lastDir
+    lastDir := dir
+    dir * volume
+
+deltaArr = request.security_lower_tf(syminfo.tickerid, cvdLowerTf, f_barDelta())
+
+nyRthTime      = time(timeframe.period, "0930-1600:23456", "America/New_York")
+inNyRth        = not na(nyRthTime)
+isNewNyRth     = inNyRth and na(nyRthTime[1])
+isNewCvdPeriod = cvdReset == "Session"                ? ta.change(time("D")) != 0 :
+                 cvdReset == "Day"                    ? ta.change(time("D")) != 0 :
+                 cvdReset == "Week"                   ? ta.change(time("W")) != 0 :
+                 cvdReset == "NY RTH (9:30-16:00 ET)" ? isNewNyRth :
                  false
-rng = high - low
-delta = rng > 0 ? volume * ((close - low) - (high - close)) / rng : 0.0
+rng       = high - low
+fallback  = rng > 0 ? volume * ((close - low) - (high - close)) / rng : 0.0
+rawDelta  = array.size(deltaArr) > 0 ? array.sum(deltaArr) : fallback
+delta     = cvdReset == "NY RTH (9:30-16:00 ET)" and not inNyRth ? 0.0 : rawDelta
 var float cvd = 0.0
 cvd := isNewCvdPeriod ? delta : nz(cvd[1]) + delta
 
@@ -499,17 +518,20 @@ alertcondition((condA or condB or condC or condD or condE) and (validUp or valid
 panelPosConst = panelPos == "top_left" ? position.top_left : panelPos == "top_right" ? position.top_right : panelPos == "top_center" ? position.top_center : panelPos == "middle_left" ? position.middle_left : panelPos == "middle_right" ? position.middle_right : panelPos == "bottom_left" ? position.bottom_left : position.bottom_right
 panelTextSize = panelSize == "tiny" ? size.tiny : panelSize == "small" ? size.small : panelSize == "normal" ? size.normal : panelSize == "large" ? size.large : size.huge
 
-var table valTable = table.new(panelPosConst, 2, 3, border_width=1, frame_color=color.new(color.gray, 50), frame_width=1)
+var table valTable = table.new(panelPosConst, 2, 4, border_width=1, frame_color=color.new(color.gray, 50), frame_width=1)
 if showPanel and barstate.islast
     rsiClr = rsi >= rsiOBlvl ? color.red : rsi <= rsiOSlvl ? color.lime : color.white
     stkClr = stk >= stOBlvl  ? color.red : stk <= stOSlvl  ? color.lime : color.white
+    cciClr = cci >= cciOBlvl ? color.red : cci <= cciOSlvl ? color.lime : color.white
     cvdClr = cvd >= 0 ? color.lime : color.red
     table.cell(valTable, 0, 0, "RSI",   text_color=color.gray,  text_size=panelTextSize)
     table.cell(valTable, 1, 0, str.tostring(rsi, "#.#"),  text_color=rsiClr, text_size=panelTextSize)
     table.cell(valTable, 0, 1, "Stoch", text_color=color.gray,  text_size=panelTextSize)
     table.cell(valTable, 1, 1, str.tostring(stk, "#.#"),  text_color=stkClr, text_size=panelTextSize)
-    table.cell(valTable, 0, 2, "CVD",   text_color=color.gray,  text_size=panelTextSize)
-    table.cell(valTable, 1, 2, str.tostring(cvd, "#"),    text_color=cvdClr, text_size=panelTextSize)
+    table.cell(valTable, 0, 2, "CCI",   text_color=color.gray,  text_size=panelTextSize)
+    table.cell(valTable, 1, 2, str.tostring(cci, "#.#"),  text_color=cciClr, text_size=panelTextSize)
+    table.cell(valTable, 0, 3, "CVD",   text_color=color.gray,  text_size=panelTextSize)
+    table.cell(valTable, 1, 3, str.tostring(cvd, "#"),    text_color=cvdClr, text_size=panelTextSize)
 
 // ============================================================
 // OB/OS Bar Markers (live, no divergence required)
@@ -518,9 +540,26 @@ rsiOB_now = rsi >= rsiOBlvl
 rsiOS_now = rsi <= rsiOSlvl
 stOB_now  = stk >= stOBlvl
 stOS_now  = stk <= stOSlvl
+cciOB_now = cci >= cciOBlvl
+cciOS_now = cci <= cciOSlvl
 
-obState = markMode == "Either RSI or Stoch" ? (rsiOB_now or stOB_now) : markMode == "Both RSI and Stoch" ? (rsiOB_now and stOB_now) : markMode == "RSI only" ? rsiOB_now : stOB_now
-osState = markMode == "Either RSI or Stoch" ? (rsiOS_now or stOS_now) : markMode == "Both RSI and Stoch" ? (rsiOS_now and stOS_now) : markMode == "RSI only" ? rsiOS_now : stOS_now
+obCount = (rsiOB_now ? 1 : 0) + (stOB_now ? 1 : 0) + (cciOB_now ? 1 : 0)
+osCount = (rsiOS_now ? 1 : 0) + (stOS_now ? 1 : 0) + (cciOS_now ? 1 : 0)
+
+obState = markMode == "Any of RSI/Stoch/CCI"     ? (obCount >= 1) :
+          markMode == "All 3 (RSI, Stoch, CCI)"  ? (obCount >= 3) :
+          markMode == "2 of 3 (RSI/Stoch/CCI)"   ? (obCount >= 2) :
+          markMode == "Both RSI and Stoch"       ? (rsiOB_now and stOB_now) :
+          markMode == "RSI only"                 ? rsiOB_now :
+          markMode == "Stoch only"               ? stOB_now :
+                                                   cciOB_now
+osState = markMode == "Any of RSI/Stoch/CCI"     ? (osCount >= 1) :
+          markMode == "All 3 (RSI, Stoch, CCI)"  ? (osCount >= 3) :
+          markMode == "2 of 3 (RSI/Stoch/CCI)"   ? (osCount >= 2) :
+          markMode == "Both RSI and Stoch"       ? (rsiOS_now and stOS_now) :
+          markMode == "RSI only"                 ? rsiOS_now :
+          markMode == "Stoch only"               ? stOS_now :
+                                                   cciOS_now
 
 obTrigger = obState and not obState[1]
 osTrigger = osState and not osState[1]
