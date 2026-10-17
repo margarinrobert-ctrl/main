@@ -1,0 +1,199 @@
+//@version=6
+// ============================================================================
+//  ATR x VIX Deviation Bands  (+/-1, +/-2, +/-3)
+// ----------------------------------------------------------------------------
+//  Plots volatility deviation bands at +/-1, +/-2 and +/-3 around a basis.
+//  The band "unit" is built from BOTH realized volatility (ATR) and implied
+//  volatility (VIX), auto-tracked and blended so the bands widen when the
+//  options market is pricing event risk and tighten when markets are calm.
+//
+//  Math / research notes
+//  ---------------------
+//  * VIX is the 30-day ANNUALIZED implied volatility of the S&P 500, quoted
+//    in percent. To turn it into an expected move you de-annualize it by the
+//    square-root-of-time rule:
+//        move_fraction = (VIX/100) * sqrt(horizon_in_years)
+//    For ONE trading day that is (VIX/100)/sqrt(252) ~= VIX/15.87 -> the
+//    well-known "Rule of 16". This script generalizes the horizon to the
+//    chart's bar size so it stays correct on intraday, daily, weekly, etc.
+//  * ATR (Average True Range) measures REALIZED volatility in price units.
+//  * Implied vol (VIX) exceeds realized vol (~ATR) ~85% of the time on the
+//    S&P 500 -- the "volatility risk premium". The ratio implied/realized is
+//    shown as VRP and used as a regime signal.
+// ============================================================================
+
+indicator("ATR x VIX Deviation Bands", shorttitle="ATRxVIX Dev", overlay=true,
+     max_bars_back=5000)
+
+// ============================================================
+// Inputs
+// ============================================================
+gBasis = "Basis (center line)"
+basisType = input.string("EMA", "Basis type", options=["Close", "SMA", "EMA", "WMA", "VWMA", "HL2", "HLC3"], group=gBasis)
+basisLen  = input.int(20, "Basis length", minval=1, group=gBasis)
+showBasis = input.bool(true, "Show basis line", group=gBasis)
+
+gATR = "Realized Volatility (ATR)"
+atrLen = input.int(14, "ATR length", minval=1, group=gATR)
+
+gVIX = "Implied Volatility (VIX)"
+useVix    = input.bool(true, "Auto-track VIX", group=gVIX, tooltip="Pulls the VIX index and converts its annualized implied volatility into an expected move for the current bar horizon.")
+vixSymbol = input.symbol("CBOE:VIX", "Volatility index symbol", group=gVIX, tooltip="Use CBOE:VIX or TVC:VIX for S&P 500. You can swap in VXN (Nasdaq), RVX (Russell), VXD (Dow), etc. for other instruments.")
+tradingDays = input.int(252, "Trading days / year", minval=1, group=gVIX)
+sessMinPerDay = input.float(1440, "Intraday: session minutes / day", minval=1, group=gVIX, tooltip="Minutes the market trades per day, used ONLY on intraday timeframes to scale VIX to the bar horizon. 1440 for 24h (crypto/futures), 390 for US equities RTH (6.5h).")
+
+gBlend = "Volatility Blend (the 'advantage')"
+blendMode = input.string("Max (event-risk)", "Band unit mode", options=["Blend", "Max (event-risk)", "ATR only", "VIX only"], group=gBlend, tooltip="Blend = weighted mix of ATR and VIX move. Max = take whichever is larger so bands widen when options price event risk. ATR/VIX only = single source.")
+vixWeight = input.float(0.5, "VIX weight (Blend mode)", minval=0, maxval=1, step=0.05, group=gBlend)
+
+gDev = "Deviation Multipliers"
+dev1 = input.float(1.0, "Deviation 1", step=0.1, group=gDev)
+dev2 = input.float(2.0, "Deviation 2", step=0.1, group=gDev)
+dev3 = input.float(3.0, "Deviation 3", step=0.1, group=gDev)
+
+gShow = "Display"
+show1 = input.bool(true, "Show +/-1", group=gShow)
+show2 = input.bool(true, "Show +/-2", group=gShow)
+show3 = input.bool(true, "Show +/-3", group=gShow)
+fillBands = input.bool(true, "Fill between bands", group=gShow)
+upCol  = input.color(color.new(color.teal, 0), "Upper color", group=gShow)
+dnCol  = input.color(color.new(color.red, 0),  "Lower color", group=gShow)
+showTable = input.bool(true, "Show info table", group=gShow)
+tablePos  = input.string("Top Right", "Table position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group=gShow)
+
+// ============================================================
+// Basis
+// ============================================================
+basis = switch basisType
+    "Close" => close
+    "SMA"   => ta.sma(close, basisLen)
+    "EMA"   => ta.ema(close, basisLen)
+    "WMA"   => ta.wma(close, basisLen)
+    "VWMA"  => ta.vwma(close, basisLen)
+    "HL2"   => hl2
+    "HLC3"  => hlc3
+    => close
+
+// ============================================================
+// Realized volatility (ATR)
+// ============================================================
+atr = ta.atr(atrLen)
+
+// ============================================================
+// Implied volatility (VIX) -> expected move for this bar horizon
+// ------------------------------------------------------------
+//   horizon_years = bar length / one trading year
+//   move = close * (VIX/100) * sqrt(horizon_years)
+// ============================================================
+vixSec = request.security(vixSymbol, timeframe.period, close, barmerge.gaps_off, barmerge.lookahead_off)
+vixRaw = useVix ? vixSec : na
+
+// Fraction of a trading year represented by ONE current bar.
+f_barYearFraction() =>
+    float frac = na
+    if timeframe.isdaily
+        frac := 1.0 / tradingDays
+    else if timeframe.isweekly
+        frac := 1.0 / 52.0
+    else if timeframe.ismonthly
+        frac := 1.0 / 12.0
+    else
+        // intraday: bars/year = tradingDays * (sessionMinutes / barMinutes)
+        barMin = timeframe.in_seconds() / 60.0
+        barsPerYear = tradingDays * (sessMinPerDay / barMin)
+        frac := 1.0 / barsPerYear
+    frac
+
+yearFrac = f_barYearFraction()
+vixMove = not na(vixRaw) ? close * (vixRaw / 100.0) * math.sqrt(yearFrac) : na
+
+// ============================================================
+// Combine ATR + VIX into the band unit
+// ============================================================
+unit = switch blendMode
+    "ATR only" => atr
+    "VIX only" => na(vixMove) ? atr : vixMove
+    "Max (event-risk)" => na(vixMove) ? atr : math.max(atr, vixMove)
+    "Blend" => na(vixMove) ? atr : (1.0 - vixWeight) * atr + vixWeight * vixMove
+    => atr
+
+// Volatility risk premium ratio (implied / realized). >1 => IV richer than RV.
+vrp = (not na(vixMove) and atr > 0) ? vixMove / atr : na
+
+// ============================================================
+// Bands
+// ============================================================
+u1 = basis + dev1 * unit
+u2 = basis + dev2 * unit
+u3 = basis + dev3 * unit
+l1 = basis - dev1 * unit
+l2 = basis - dev2 * unit
+l3 = basis - dev3 * unit
+
+pBasis = plot(showBasis ? basis : na, "Basis", color=color.new(color.gray, 0), linewidth=2)
+
+pu1 = plot(show1 ? u1 : na, "+1", color=color.new(upCol, 20), linewidth=1)
+pu2 = plot(show2 ? u2 : na, "+2", color=color.new(upCol, 35), linewidth=1)
+pu3 = plot(show3 ? u3 : na, "+3", color=color.new(upCol, 50), linewidth=1)
+pl1 = plot(show1 ? l1 : na, "-1", color=color.new(dnCol, 20), linewidth=1)
+pl2 = plot(show2 ? l2 : na, "-2", color=color.new(dnCol, 35), linewidth=1)
+pl3 = plot(show3 ? l3 : na, "-3", color=color.new(dnCol, 50), linewidth=1)
+
+// Fills (each progressively more transparent toward the outer band)
+fill(pBasis, pu1, color=fillBands and show1 ? color.new(upCol, 90) : na, title="Basis..+1")
+fill(pu1, pu2, color=fillBands and show2 ? color.new(upCol, 93) : na, title="+1..+2")
+fill(pu2, pu3, color=fillBands and show3 ? color.new(upCol, 95) : na, title="+2..+3")
+fill(pBasis, pl1, color=fillBands and show1 ? color.new(dnCol, 90) : na, title="Basis..-1")
+fill(pl1, pl2, color=fillBands and show2 ? color.new(dnCol, 93) : na, title="-1..-2")
+fill(pl2, pl3, color=fillBands and show3 ? color.new(dnCol, 95) : na, title="-2..-3")
+
+// ============================================================
+// Info table
+// ============================================================
+var table t = na
+if showTable
+    pos = switch tablePos
+        "Top Right"    => position.top_right
+        "Top Left"     => position.top_left
+        "Bottom Right" => position.bottom_right
+        "Bottom Left"  => position.bottom_left
+        => position.top_right
+    if na(t)
+        t := table.new(pos, 2, 7, border_width=1)
+
+    if barstate.islast
+        atrPct = close > 0 ? atr / close * 100.0 : na
+        vixMovePct = (not na(vixMove) and close > 0) ? vixMove / close * 100.0 : na
+        regime = na(vrp) ? "VIX n/a" : (vrp >= 1.0 ? "IV premium (event risk)" : "Calm (realized > IV)")
+        regimeCol = na(vrp) ? color.gray : (vrp >= 1.0 ? color.new(color.orange, 0) : color.new(color.teal, 0))
+
+        table.cell(t, 0, 0, "ATR x VIX", text_color=color.white, bgcolor=color.new(color.blue, 0), text_size=size.small)
+        table.cell(t, 1, 0, blendMode, text_color=color.white, bgcolor=color.new(color.blue, 0), text_size=size.small)
+
+        table.cell(t, 0, 1, "ATR (RV)", text_color=color.white, text_size=size.small)
+        table.cell(t, 1, 1, str.tostring(atr, format.mintick) + (na(atrPct) ? "" : "  (" + str.tostring(atrPct, "#.##") + "%)"), text_color=color.white, text_size=size.small)
+
+        table.cell(t, 0, 2, "VIX", text_color=color.white, text_size=size.small)
+        table.cell(t, 1, 2, na(vixRaw) ? "n/a" : str.tostring(vixRaw, "#.##"), text_color=color.white, text_size=size.small)
+
+        table.cell(t, 0, 3, "VIX move/bar", text_color=color.white, text_size=size.small)
+        table.cell(t, 1, 3, na(vixMove) ? "n/a" : str.tostring(vixMove, format.mintick) + "  (" + str.tostring(vixMovePct, "#.##") + "%)", text_color=color.white, text_size=size.small)
+
+        table.cell(t, 0, 4, "VRP (IV/RV)", text_color=color.white, text_size=size.small)
+        table.cell(t, 1, 4, na(vrp) ? "n/a" : str.tostring(vrp, "#.##") + "x", text_color=color.white, text_size=size.small)
+
+        table.cell(t, 0, 5, "Band unit", text_color=color.white, text_size=size.small)
+        table.cell(t, 1, 5, str.tostring(unit, format.mintick), text_color=color.white, text_size=size.small)
+
+        table.cell(t, 0, 6, "Regime", text_color=color.white, text_size=size.small)
+        table.cell(t, 1, 6, regime, text_color=color.white, bgcolor=regimeCol, text_size=size.small)
+
+// ============================================================
+// Alerts
+// ============================================================
+alertcondition(ta.crossover(close, u2),  "Cross above +2", "Price crossed above +2 deviation band")
+alertcondition(ta.crossunder(close, l2), "Cross below -2", "Price crossed below -2 deviation band")
+alertcondition(ta.crossover(close, u3),  "Cross above +3", "Price crossed above +3 deviation band (extreme)")
+alertcondition(ta.crossunder(close, l3), "Cross below -3", "Price crossed below -3 deviation band (extreme)")
+alertcondition(not na(vrp) and ta.crossover(vrp, 1.0),  "VRP > 1", "Implied vol overtook realized (event-risk regime)")
+alertcondition(not na(vrp) and ta.crossunder(vrp, 1.0), "VRP < 1", "Realized vol overtook implied (calm regime)")
