@@ -1,0 +1,276 @@
+//@version=6
+indicator("Swing High/Low MTF (1H + 4H) + Daily/Weekly/Monthly - ICT", shorttitle="Swing HL MTF",
+     overlay=true, max_lines_count=500, max_labels_count=500)
+
+// ============================================================
+// Inputs
+// ============================================================
+gGen = "General"
+maxSwings  = input.int(20, "Max Levels per Timeframe", minval=1, maxval=100, group=gGen)
+lineWidth  = input.int(1, "Line Width", minval=1, maxval=5, group=gGen)
+styleStr   = input.string("Solid", "Line Style", options=["Solid", "Dashed", "Dotted"], group=gGen)
+hideSwept  = input.bool(false, "Delete Level Once Swept", group=gGen,
+     tooltip="If on, the line and label are removed entirely when price trades through the level. If off, the line stays but stops at the candle that swept it.")
+
+gLbl = "Labels"
+showLabels   = input.bool(true, "Show Labels", group=gLbl)
+labelSizeStr = input.string("Small", "Label Size", options=["Tiny", "Small", "Normal", "Large", "Huge"], group=gLbl)
+labelPosStr  = input.string("Line End", "Label Position", options=["Line End", "Swing Start"], group=gLbl)
+showPrice    = input.bool(false, "Show Price in Label", group=gLbl)
+matchLineCol = input.bool(true, "Label Text Uses Line Color", group=gLbl,
+     tooltip="Turn off to use the custom label text color below for all labels")
+labelTextCol = input.color(color.white, "Custom Label Text Color", group=gLbl)
+labelBgCol   = input.color(color.new(color.black, 100), "Label Background Color", group=gLbl,
+     tooltip="Default is fully transparent; lower the transparency for a solid background")
+stackModeStr = input.string("Keep Highest Timeframe", "Stacked Labels", group=gLbl,
+     options=["Keep Highest Timeframe", "Spread Apart", "Off"],
+     tooltip="What to do when several levels sit at almost the same price: show only the highest-timeframe label and hide the rest, spread all the labels out to the right, or leave them overlapping")
+stackBars    = input.int(8, "Gap Between Spread Labels (bars)", minval=1, maxval=50, group=gLbl)
+charBars     = input.float(2.0, "Label Width per Character (bars)", minval=0.5, step=0.5, group=gLbl,
+     tooltip="Estimates how much horizontal room each label's text needs so the next label starts after it ends. Increase if spread labels still touch at your zoom level, decrease if they spread too far apart")
+stackAtrMult = input.float(0.5, "Stack Detection Distance (ATR x)", minval=0.1, step=0.1, group=gLbl,
+     tooltip="Labels closer together than this many ATRs are treated as stacked")
+
+g1h = "1 Hour Swings"
+show1h  = input.bool(true, "Show 1H Swings", group=g1h)
+color1h = input.color(color.red, "1H Line Color", group=g1h)
+
+g4h = "4 Hour Swings"
+show4h  = input.bool(true, "Show 4H Swings", group=g4h)
+color4h = input.color(color.blue, "4H Line Color", group=g4h)
+
+gD = "Previous Day Levels (PDH/PDL/Open/Close)"
+tfD     = input.timeframe("D", "Timeframe", group=gD,
+     tooltip="Period for the previous high/low/open/close. Default is the previous day; pick another timeframe to track a different period.")
+showDHL = input.bool(true, "Show Previous High/Low", group=gD)
+colorDH = input.color(color.yellow, "High Line Color", group=gD)
+colorDL = input.color(color.yellow, "Low Line Color", group=gD)
+showDO  = input.bool(false, "Show Previous Open", group=gD)
+colorDO = input.color(color.aqua, "Open Line Color", group=gD)
+showDC  = input.bool(false, "Show Previous Close", group=gD)
+colorDC = input.color(color.maroon, "Close Line Color", group=gD)
+ocStyleStr  = input.string("Dotted", "Open/Close Line Style", options=["Solid", "Dashed", "Dotted"], group=gD)
+onlyLatestD = input.bool(true, "Only Show Latest Period", group=gD,
+     tooltip="If on, the previous period's lines are removed when a new period starts (like classic PDH/PDL scripts). If off, old highs/lows stay until swept and old open/close lines freeze at the period change.")
+
+gW = "Weekly Levels"
+showW  = input.bool(true, "Show Previous Week High/Low", group=gW)
+colorW = input.color(color.orange, "Weekly Line Color", group=gW)
+
+gM = "Monthly Levels"
+showM  = input.bool(true, "Show Previous Month High/Low", group=gM)
+colorM = input.color(color.purple, "Monthly Line Color", group=gM)
+
+f_style(string s) =>
+    s == "Dashed" ? line.style_dashed : s == "Dotted" ? line.style_dotted : line.style_solid
+
+lineStyle = f_style(styleStr)
+ocStyle   = f_style(ocStyleStr)
+labelSize = labelSizeStr == "Tiny" ? size.tiny :
+     labelSizeStr == "Normal" ? size.normal :
+     labelSizeStr == "Large" ? size.large :
+     labelSizeStr == "Huge" ? size.huge : size.small
+labelAtEnd = labelPosStr == "Line End"
+
+// ============================================================
+// ICT swing detection (3-candle pattern on the higher timeframe):
+// swing high = candle whose high is above the highs of the candles
+// on both sides; swing low = candle whose low is below both neighbors.
+// Only completed HTF candles are used (offsets 1-3), so a swing never
+// appears and then disappears while the current HTF candle is forming
+// ============================================================
+f_ictSwings() =>
+    sh = high[2] > high[3] and high[2] > high[1] ? high[2] : na
+    sl = low[2]  < low[3]  and low[2]  < low[1]  ? low[2]  : na
+    [sh, sl, time[2]]
+
+// Previous completed period values; time is the current period's open
+f_prevHL() =>
+    [high[1], low[1], time]
+
+f_prevHLOC() =>
+    [high[1], low[1], open[1], close[1], time]
+
+// lookahead_on is safe (non-repainting) here because every value comes
+// from completed HTF candles ([1]+ offsets). It makes levels appear as
+// soon as they exist instead of one full HTF period late — with the
+// late arrival, a level could already be swept before its line was
+// created, so the sweep was never detected and the line never removed
+[sh1h, sl1h, t1h]    = request.security(syminfo.tickerid, "60",  f_ictSwings(), lookahead=barmerge.lookahead_on)
+[sh4h, sl4h, t4h]    = request.security(syminfo.tickerid, "240", f_ictSwings(), lookahead=barmerge.lookahead_on)
+[hD, lD, oD, cD, tD] = request.security(syminfo.tickerid, tfD,  f_prevHLOC(), lookahead=barmerge.lookahead_on)
+[hW, lW, tW]         = request.security(syminfo.tickerid, "W",   f_prevHL(),   lookahead=barmerge.lookahead_on)
+[hM, lM, tM]         = request.security(syminfo.tickerid, "M",   f_prevHL(),   lookahead=barmerge.lookahead_on)
+
+// ============================================================
+// Level tracking
+// dir:  1 = swing/period high (swept when price trades above)
+//      -1 = swing/period low  (swept when price trades below)
+//       0 = open/close level  (never swept; runs until its period ends)
+// ============================================================
+type Swing
+    line  ln
+    label lb
+    float level
+    int   dir
+    bool  active
+    int   rank   // timeframe priority: 1H=1, 4H=2, daily group=3, W=4, M=5
+    string txt   // full label text, kept so a hidden label can be restored
+
+var array<Swing> swings1h = array.new<Swing>()
+var array<Swing> swings4h = array.new<Swing>()
+var array<Swing> swingsD  = array.new<Swing>()
+var array<Swing> swingsW  = array.new<Swing>()
+var array<Swing> swingsM  = array.new<Swing>()
+
+f_addSwing(array<Swing> arr, float level, int t, int dir, color col, string txt, string lnStyle, int rank) =>
+    ln = line.new(t, level, time, level, xloc=xloc.bar_time,
+         color=col, width=lineWidth, style=lnStyle, extend=extend.none)
+    lblTxt = showPrice ? txt + "  " + str.tostring(level, format.mintick) : txt
+    label lb = na
+    if showLabels
+        lb := label.new(labelAtEnd ? time : t, level, lblTxt, xloc=xloc.bar_time,
+             style=labelAtEnd ? label.style_label_left : label.style_label_right,
+             textcolor=matchLineCol ? col : labelTextCol,
+             color=labelBgCol, size=labelSize)
+    array.push(arr, Swing.new(ln, lb, level, dir, true, rank, lblTxt))
+    if array.size(arr) > maxSwings
+        old = array.shift(arr)
+        line.delete(old.ln)
+        label.delete(old.lb)
+
+// Extend active lines to the current candle; once price trades through
+// the level, the line stops right at that candle (the sweep)
+f_update(array<Swing> arr) =>
+    for s in arr
+        if s.active
+            line.set_x2(s.ln, time)
+            if not na(s.lb) and labelAtEnd
+                label.set_x(s.lb, time)
+            swept = s.dir == 1 ? high > s.level : s.dir == -1 ? low < s.level : false
+            if swept
+                s.active := false
+                if hideSwept
+                    line.delete(s.ln)
+                    label.delete(s.lb)
+
+f_clear(array<Swing> arr) =>
+    while array.size(arr) > 0
+        old = array.shift(arr)
+        line.delete(old.ln)
+        label.delete(old.lb)
+
+// A level is confirmed once per new HTF bar/period
+new1h = t1h != t1h[1]
+new4h = t4h != t4h[1]
+newD  = tD  != tD[1]
+newW  = tW  != tW[1]
+newM  = tM  != tM[1]
+
+if show1h and new1h and not na(sh1h)
+    f_addSwing(swings1h, sh1h, t1h, 1, color1h, "1H swing high", lineStyle, 1)
+if show1h and new1h and not na(sl1h)
+    f_addSwing(swings1h, sl1h, t1h, -1, color1h, "1H swing low", lineStyle, 1)
+if show4h and new4h and not na(sh4h)
+    f_addSwing(swings4h, sh4h, t4h, 1, color4h, "4H swing high", lineStyle, 2)
+if show4h and new4h and not na(sl4h)
+    f_addSwing(swings4h, sl4h, t4h, -1, color4h, "4H swing low", lineStyle, 2)
+
+if newD
+    if onlyLatestD
+        f_clear(swingsD)
+    else
+        // open/close levels belong to one period only: freeze them here
+        for s in swingsD
+            if s.dir == 0
+                s.active := false
+    if showDHL and not na(hD)
+        f_addSwing(swingsD, hD, tD, 1, colorDH, "Prev " + tfD + " high", lineStyle, 3)
+    if showDHL and not na(lD)
+        f_addSwing(swingsD, lD, tD, -1, colorDL, "Prev " + tfD + " low", lineStyle, 3)
+    if showDO and not na(oD)
+        f_addSwing(swingsD, oD, tD, 0, colorDO, "Prev " + tfD + " open", ocStyle, 3)
+    if showDC and not na(cD)
+        f_addSwing(swingsD, cD, tD, 0, colorDC, "Prev " + tfD + " close", ocStyle, 3)
+
+if showW and newW and not na(hW)
+    f_addSwing(swingsW, hW, tW, 1, colorW, "Prev week high", lineStyle, 4)
+if showW and newW and not na(lW)
+    f_addSwing(swingsW, lW, tW, -1, colorW, "Prev week low", lineStyle, 4)
+if showM and newM and not na(hM)
+    f_addSwing(swingsM, hM, tM, 1, colorM, "Prev month high", lineStyle, 5)
+if showM and newM and not na(lM)
+    f_addSwing(swingsM, lM, tM, -1, colorM, "Prev month low", lineStyle, 5)
+
+f_update(swings1h)
+f_update(swings4h)
+f_update(swingsD)
+f_update(swingsW)
+f_update(swingsM)
+
+// ============================================================
+// Stacked label handling: active line-end labels sitting within
+// "Stack Detection Distance" of each other either keep only the
+// highest-timeframe label or fan out to the right
+// ============================================================
+atrVal = ta.atr(14)
+
+f_collectActive(array<Swing> arr, array<Swing> out) =>
+    for s in arr
+        if s.active and not na(s.lb)
+            array.push(out, s)
+
+if showLabels and labelAtEnd and stackModeStr != "Off"
+    actives = array.new<Swing>()
+    f_collectActive(swings1h, actives)
+    f_collectActive(swings4h, actives)
+    f_collectActive(swingsD, actives)
+    f_collectActive(swingsW, actives)
+    f_collectActive(swingsM, actives)
+    n = array.size(actives)
+    if n > 1
+        // insertion sort by price level
+        for i = 1 to n - 1
+            s = array.get(actives, i)
+            j = i - 1
+            while j >= 0 and array.get(actives, j).level > s.level
+                array.set(actives, j + 1, array.get(actives, j))
+                j -= 1
+            array.set(actives, j + 1, s)
+    if n > 0
+        barDur = nz(time - time[1], 60000)
+        thresh = atrVal * stackAtrMult
+        if stackModeStr == "Spread Apart"
+            // each stacked label starts after the previous label's
+            // estimated text width plus a gap, so they fan out cleanly
+            float offBars = 0.0
+            float prevLevel = na
+            string prevTxt = na
+            for i = 0 to n - 1
+                s = array.get(actives, i)
+                if not na(prevLevel) and s.level - prevLevel < thresh
+                    offBars := offBars + str.length(prevTxt) * charBars + stackBars
+                else
+                    offBars := 0.0
+                label.set_text(s.lb, s.txt)
+                label.set_x(s.lb, time + math.round(offBars * barDur))
+                prevLevel := s.level
+                prevTxt := s.txt
+        else
+            // Keep Highest Timeframe: within each stacked group, only the
+            // label from the biggest timeframe stays visible; the others
+            // are blanked (and restored if the group later thins out)
+            int gStart = 0
+            for i = 1 to n
+                bool groupEnds = true
+                if i < n
+                    groupEnds := array.get(actives, i).level - array.get(actives, i - 1).level >= thresh
+                if groupEnds
+                    bestIdx = gStart
+                    for j = gStart to i - 1
+                        if array.get(actives, j).rank > array.get(actives, bestIdx).rank
+                            bestIdx := j
+                    for j = gStart to i - 1
+                        s = array.get(actives, j)
+                        label.set_text(s.lb, j == bestIdx ? s.txt : "")
+                    gStart := i
